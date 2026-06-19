@@ -22,6 +22,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import android.content.pm.ActivityInfo
+import com.apostolos.tv.ui.common.focusScale
 import com.apostolos.tv.ui.theme.CinemaDimens
 import com.apostolos.tv.ui.theme.CinemaError
 import com.apostolos.tv.ui.theme.CinemaSurface
@@ -114,7 +115,8 @@ fun PlayerScreen(
             },
             modifier = Modifier
                 .align(Alignment.TopStart)
-                .padding(12.dp),
+                .padding(12.dp)
+                .focusScale(),
         ) {
             Icon(
                 imageVector = Icons.AutoMirrored.Filled.ArrowBack,

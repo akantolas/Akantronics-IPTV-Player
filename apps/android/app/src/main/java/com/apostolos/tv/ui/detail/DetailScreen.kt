@@ -50,6 +50,7 @@ import com.apostolos.tv.ui.common.CinemaAsyncImage
 import com.apostolos.tv.ui.common.ErrorState
 import com.apostolos.tv.ui.common.FavoriteButton
 import com.apostolos.tv.ui.common.LoadingScreenSkeleton
+import com.apostolos.tv.ui.common.focusScale
 import com.apostolos.tv.ui.theme.CinemaBlack
 import com.apostolos.tv.ui.theme.CinemaDimens
 import com.apostolos.tv.ui.theme.CinemaOnDarkMuted
@@ -175,7 +176,9 @@ fun DetailScreen(
                                             onPlay(false)
                                         }
                                     },
-                                    modifier = Modifier.weight(1f),
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .focusScale(),
                                     colors = ButtonDefaults.buttonColors(containerColor = CinemaPrimary),
                                 ) {
                                     Icon(
@@ -194,7 +197,9 @@ fun DetailScreen(
                                 }
                                 OutlinedButton(
                                     onClick = onBack,
-                                    modifier = Modifier.weight(0.55f),
+                                    modifier = Modifier
+                                        .weight(0.55f)
+                                        .focusScale(),
                                 ) {
                                     Text("Πίσω")
                                 }

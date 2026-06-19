@@ -1,0 +1,5 @@
+# Add new build outputs from the TV project.
+apps/android-tv/.gradle/
+apps/android-tv/.idea/
+apps/android-tv/local.properties
+apps/android-tv/**/build/

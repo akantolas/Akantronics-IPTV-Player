@@ -14,6 +14,12 @@ apps/android/**/*.apk
 apps/android/**/*.aab
 apps/android/.cxx/
 apps/android/captures/
+apps/android-tv/.gradle/
+apps/android-tv/.idea/
+apps/android-tv/local.properties
+apps/android-tv/**/build/
+apps/android-tv/**/*.apk
+apps/android-tv/**/*.aab
 
 # OS
 .DS_Store

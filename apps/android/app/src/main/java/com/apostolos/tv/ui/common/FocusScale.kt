@@ -13,18 +13,22 @@ import androidx.compose.ui.composed
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.unit.dp
+import com.apostolos.tv.ui.common.rememberIsTvFormFactor
 import com.apostolos.tv.ui.theme.CinemaPrimary
 
 fun Modifier.focusScale(
     enabled: Boolean = true,
-    focusedScale: Float = 1.04f,
+    focusedScale: Float? = null,
 ): Modifier = if (!enabled) {
     this
 } else {
     composed {
+        val isTv = rememberIsTvFormFactor()
+        val scaleTarget = focusedScale ?: if (isTv) 1.08f else 1.04f
+        val borderWidth = if (isTv) 3.dp else 2.dp
         var isFocused by remember { mutableStateOf(false) }
         val scale by animateFloatAsState(
-            targetValue = if (isFocused) focusedScale else 1f,
+            targetValue = if (isFocused) scaleTarget else 1f,
             animationSpec = tween(durationMillis = 180),
             label = "focusScale",
         )
@@ -34,7 +38,11 @@ fun Modifier.focusScale(
             .focusable()
             .then(
                 if (isFocused) {
-                    Modifier.border(2.dp, CinemaPrimary.copy(alpha = 0.85f), androidx.compose.foundation.shape.RoundedCornerShape(12.dp))
+                    Modifier.border(
+                        borderWidth,
+                        CinemaPrimary.copy(alpha = 0.85f),
+                        androidx.compose.foundation.shape.RoundedCornerShape(12.dp),
+                    )
                 } else {
                     Modifier
                 },

@@ -6,6 +6,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
+import com.apostolos.tv.ui.common.rememberIsTvFormFactor
 
 private val CinemaColorScheme = darkColorScheme(
     primary = CinemaPrimary,
@@ -28,6 +29,7 @@ private val CinemaColorScheme = darkColorScheme(
 
 @Composable
 fun TvTheme(content: @Composable () -> Unit) {
+    val isTv = rememberIsTvFormFactor()
     val view = LocalView.current
     SideEffect {
         val window = (view.context as? android.app.Activity)?.window ?: return@SideEffect
@@ -39,7 +41,7 @@ fun TvTheme(content: @Composable () -> Unit) {
 
     MaterialTheme(
         colorScheme = CinemaColorScheme,
-        typography = CinemaTypography,
+        typography = if (isTv) CinemaTvTypography else CinemaTypography,
         shapes = CinemaShapes,
         content = content,
     )

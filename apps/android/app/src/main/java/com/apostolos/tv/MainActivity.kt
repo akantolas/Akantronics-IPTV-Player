@@ -8,7 +8,9 @@ import androidx.activity.enableEdgeToEdge
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
+        if (!BuildConfig.IS_TV_FORM_FACTOR) {
+            enableEdgeToEdge()
+        }
         setContent {
             TvApp(application = application)
         }

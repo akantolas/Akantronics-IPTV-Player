@@ -1,6 +1,10 @@
 package com.apostolos.tv.ui.home
 
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.LiveTv
@@ -43,6 +47,8 @@ import com.apostolos.tv.data.CredentialsStore
 import com.apostolos.tv.data.model.WatchType
 import com.apostolos.tv.data.model.normalizeCategoryId
 import com.apostolos.tv.ui.common.BrandAppBarTitle
+import com.apostolos.tv.ui.common.focusScale
+import com.apostolos.tv.ui.common.rememberIsTvFormFactor
 import com.apostolos.tv.ui.dashboard.DashboardScreen
 import com.apostolos.tv.ui.dashboard.DashboardViewModel
 import com.apostolos.tv.ui.detail.ContentDetailViewModel
@@ -111,6 +117,7 @@ fun HomeScreen(
         currentRoute == HomeRoutes.Search ||
         currentRoute == HomeRoutes.Detail
     val showBottomBar = !onOverlayRoute
+    val isTv = rememberIsTvFormFactor()
 
     fun openPlayer() {
         navController.navigate(HomeRoutes.Player)
@@ -125,97 +132,168 @@ fun HomeScreen(
         navController.navigate(HomeRoutes.Search)
     }
 
-    Scaffold(
-        containerColor = CinemaBlack,
-        topBar = {
-            if (!onOverlayRoute) {
-                TopAppBar(
-                    title = {
-                        when (currentRoute) {
-                            HomeTab.Dashboard.route -> BrandAppBarTitle()
-                            HomeTab.Live.route -> BrandAppBarTitle(sectionTitle = "Live TV")
-                            HomeTab.Movies.route -> BrandAppBarTitle(sectionTitle = "Ταινίες")
-                            HomeTab.Series.route -> BrandAppBarTitle(sectionTitle = "Σειρές")
-                            else -> BrandAppBarTitle()
-                        }
-                    },
-                    actions = {
-                        IconButton(onClick = { openSearch() }) {
-                            Icon(
-                                imageVector = Icons.Default.Search,
-                                contentDescription = "Αναζήτηση",
-                            )
-                        }
-                        IconButton(onClick = { navController.navigate(HomeRoutes.Settings) }) {
-                            Icon(
-                                imageVector = Icons.Default.Settings,
-                                contentDescription = "Ρυθμίσεις",
-                            )
-                        }
-                    },
-                    colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = CinemaSurface,
-                        titleContentColor = MaterialTheme.colorScheme.onBackground,
-                        actionIconContentColor = MaterialTheme.colorScheme.onBackground,
-                    ),
+    fun navigateToTab(tab: HomeTab) {
+        navController.navigate(tab.route) {
+            popUpTo(navController.graph.findStartDestination().id) {
+                saveState = true
+            }
+            launchSingleTop = true
+            restoreState = true
+        }
+    }
+
+    val navGraph: @Composable (Modifier, PaddingValues) -> Unit = { modifier, contentPadding ->
+        HomeNavGraph(
+            modifier = modifier.padding(contentPadding),
+            navController = navController,
+            dashboardViewModel = dashboardViewModel,
+            liveViewModel = liveViewModel,
+            moviesViewModel = moviesViewModel,
+            seriesViewModel = seriesViewModel,
+            settingsViewModel = settingsViewModel,
+            searchViewModel = searchViewModel,
+            playerViewModel = playerViewModel,
+            detailViewModel = detailViewModel,
+            categoryVisibilityStore = categoryVisibilityStore,
+            onLogout = onLogout,
+            openPlayer = ::openPlayer,
+            openDetail = ::openDetail,
+            navigateToTab = ::navigateToTab,
+        )
+    }
+
+    if (isTv) {
+        Row(modifier = Modifier.fillMaxSize()) {
+            if (showBottomBar) {
+                TvHomeNavigationRail(
+                    currentRoute = currentRoute,
+                    onNavigate = ::navigateToTab,
+                    onSearch = ::openSearch,
+                    onSettings = { navController.navigate(HomeRoutes.Settings) },
                 )
             }
-        },
-        bottomBar = {
-            if (showBottomBar) {
-                NavigationBar(
-                    containerColor = CinemaSurface,
-                    tonalElevation = 0.dp,
-                    windowInsets = NavigationBarDefaults.windowInsets,
-                ) {
-                    HomeTab.entries.forEach { tab ->
-                        val selected = currentRoute == tab.route
-                        NavigationBarItem(
-                            selected = selected,
-                            onClick = {
-                                navController.navigate(tab.route) {
-                                    popUpTo(navController.graph.findStartDestination().id) {
-                                        saveState = true
-                                    }
-                                    launchSingleTop = true
-                                    restoreState = true
-                                }
-                            },
-                            icon = {
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight(),
+            ) {
+                navGraph(Modifier.fillMaxSize(), PaddingValues(0.dp))
+            }
+        }
+    } else {
+        Scaffold(
+            containerColor = CinemaBlack,
+            topBar = {
+                if (!onOverlayRoute) {
+                    TopAppBar(
+                        title = {
+                            when (currentRoute) {
+                                HomeTab.Dashboard.route -> BrandAppBarTitle()
+                                HomeTab.Live.route -> BrandAppBarTitle(sectionTitle = "Live TV")
+                                HomeTab.Movies.route -> BrandAppBarTitle(sectionTitle = "Ταινίες")
+                                HomeTab.Series.route -> BrandAppBarTitle(sectionTitle = "Σειρές")
+                                else -> BrandAppBarTitle()
+                            }
+                        },
+                        actions = {
+                            IconButton(
+                                onClick = { openSearch() },
+                                modifier = Modifier.focusScale(),
+                            ) {
                                 Icon(
-                                    imageVector = when (tab) {
-                                        HomeTab.Dashboard -> Icons.Default.Home
-                                        HomeTab.Live -> Icons.Default.LiveTv
-                                        HomeTab.Movies -> Icons.Default.Movie
-                                        HomeTab.Series -> Icons.Default.Tv
-                                    },
-                                    contentDescription = tab.label,
+                                    imageVector = Icons.Default.Search,
+                                    contentDescription = "Αναζήτηση",
                                 )
-                            },
-                            label = { Text(tab.label) },
-                            colors = NavigationBarItemDefaults.colors(
-                                selectedIconColor = CinemaPrimary,
-                                selectedTextColor = CinemaPrimary,
-                                indicatorColor = CinemaPrimary.copy(alpha = 0.15f),
-                                unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                                unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                            ),
-                        )
+                            }
+                            IconButton(
+                                onClick = { navController.navigate(HomeRoutes.Settings) },
+                                modifier = Modifier.focusScale(),
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Settings,
+                                    contentDescription = "Ρυθμίσεις",
+                                )
+                            }
+                        },
+                        colors = TopAppBarDefaults.topAppBarColors(
+                            containerColor = CinemaSurface,
+                            titleContentColor = MaterialTheme.colorScheme.onBackground,
+                            actionIconContentColor = MaterialTheme.colorScheme.onBackground,
+                        ),
+                    )
+                }
+            },
+            bottomBar = {
+                if (showBottomBar) {
+                    NavigationBar(
+                        containerColor = CinemaSurface,
+                        tonalElevation = 0.dp,
+                        windowInsets = NavigationBarDefaults.windowInsets,
+                    ) {
+                        HomeTab.entries.forEach { tab ->
+                            val selected = currentRoute == tab.route
+                            NavigationBarItem(
+                                modifier = Modifier.focusScale(),
+                                selected = selected,
+                                onClick = { navigateToTab(tab) },
+                                icon = {
+                                    Icon(
+                                        imageVector = when (tab) {
+                                            HomeTab.Dashboard -> Icons.Default.Home
+                                            HomeTab.Live -> Icons.Default.LiveTv
+                                            HomeTab.Movies -> Icons.Default.Movie
+                                            HomeTab.Series -> Icons.Default.Tv
+                                        },
+                                        contentDescription = tab.label,
+                                    )
+                                },
+                                label = { Text(tab.label) },
+                                colors = NavigationBarItemDefaults.colors(
+                                    selectedIconColor = CinemaPrimary,
+                                    selectedTextColor = CinemaPrimary,
+                                    indicatorColor = CinemaPrimary.copy(alpha = 0.15f),
+                                    unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                ),
+                            )
+                        }
                     }
                 }
+            },
+        ) { padding ->
+            val contentPadding = if (currentRoute == HomeRoutes.Player) {
+                PaddingValues(0.dp)
+            } else {
+                padding
             }
-        },
-    ) { padding ->
-        val contentPadding = if (currentRoute == HomeRoutes.Player) {
-            PaddingValues(0.dp)
-        } else {
-            padding
+            navGraph(Modifier.fillMaxSize(), contentPadding)
         }
-        NavHost(
-            navController = navController,
-            startDestination = HomeTab.Dashboard.route,
-            modifier = Modifier.padding(contentPadding),
-        ) {
+    }
+}
+
+@Composable
+private fun HomeNavGraph(
+    modifier: Modifier,
+    navController: androidx.navigation.NavHostController,
+    dashboardViewModel: DashboardViewModel,
+    liveViewModel: LiveViewModel,
+    moviesViewModel: MoviesViewModel,
+    seriesViewModel: SeriesViewModel,
+    settingsViewModel: SettingsViewModel,
+    searchViewModel: SearchViewModel,
+    playerViewModel: PlayerViewModel,
+    detailViewModel: ContentDetailViewModel,
+    categoryVisibilityStore: CategoryVisibilityStore,
+    onLogout: () -> Unit,
+    openPlayer: () -> Unit,
+    openDetail: () -> Unit,
+    navigateToTab: (HomeTab) -> Unit,
+) {
+    NavHost(
+        navController = navController,
+        startDestination = HomeTab.Dashboard.route,
+        modifier = modifier,
+    ) {
             composable(
                 route = HomeTab.Dashboard.route,
                 enterTransition = {
@@ -241,13 +319,7 @@ fun HomeScreen(
                             }
                             WatchType.SERIES_EPISODE -> {
                                 seriesViewModel.resumeFromHistory(entry)
-                                navController.navigate(HomeTab.Series.route) {
-                                    popUpTo(navController.graph.findStartDestination().id) {
-                                        saveState = true
-                                    }
-                                    launchSingleTop = true
-                                    restoreState = true
-                                }
+                                navigateToTab(HomeTab.Series)
                             }
                             WatchType.LIVE -> {
                                 dashboardViewModel.liveFromEntry(entry)?.let { stream ->
@@ -257,43 +329,13 @@ fun HomeScreen(
                             }
                         }
                     },
-                    onBrowseLive = {
-                        navController.navigate(HomeTab.Live.route) {
-                            popUpTo(navController.graph.findStartDestination().id) {
-                                saveState = true
-                            }
-                            launchSingleTop = true
-                            restoreState = true
-                        }
-                    },
+                    onBrowseLive = { navigateToTab(HomeTab.Live) },
                     onBrowseLiveCategory = { categoryId ->
                         liveViewModel.selectCategory(categoryId)
-                        navController.navigate(HomeTab.Live.route) {
-                            popUpTo(navController.graph.findStartDestination().id) {
-                                saveState = true
-                            }
-                            launchSingleTop = true
-                            restoreState = true
-                        }
+                        navigateToTab(HomeTab.Live)
                     },
-                    onBrowseMovies = {
-                        navController.navigate(HomeTab.Movies.route) {
-                            popUpTo(navController.graph.findStartDestination().id) {
-                                saveState = true
-                            }
-                            launchSingleTop = true
-                            restoreState = true
-                        }
-                    },
-                    onBrowseSeries = {
-                        navController.navigate(HomeTab.Series.route) {
-                            popUpTo(navController.graph.findStartDestination().id) {
-                                saveState = true
-                            }
-                            launchSingleTop = true
-                            restoreState = true
-                        }
-                    },
+                    onBrowseMovies = { navigateToTab(HomeTab.Movies) },
+                    onBrowseSeries = { navigateToTab(HomeTab.Series) },
                 )
             }
             composable(
@@ -394,18 +436,11 @@ fun HomeScreen(
                     },
                     onSeriesClick = { series ->
                         navController.popBackStack()
-                        navController.navigate(HomeTab.Series.route) {
-                            popUpTo(navController.graph.findStartDestination().id) {
-                                saveState = true
-                            }
-                            launchSingleTop = true
-                            restoreState = true
-                        }
+                        navigateToTab(HomeTab.Series)
                         seriesViewModel.selectSeries(series)
                     },
                 )
             }
-        }
     }
 }
 

@@ -1,0 +1,4 @@
+## Copy to local.properties (or reuse ../android/local.properties)
+sdk.dir=C\:\\Path\\To\\Android\\Sdk
+supabase.url=https://your-project.supabase.co
+supabase.anon.key=your_supabase_anon_key

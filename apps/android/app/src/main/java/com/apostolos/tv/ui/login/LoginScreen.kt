@@ -63,6 +63,8 @@ import androidx.compose.ui.res.stringResource
 import com.apostolos.tv.R
 import com.apostolos.tv.ui.common.BrandLockup
 import com.apostolos.tv.ui.common.CinemaBackground
+import com.apostolos.tv.ui.common.focusScale
+import com.apostolos.tv.ui.common.rememberIsTvFormFactor
 import com.apostolos.tv.ui.common.SkeletonBox
 import com.apostolos.tv.ui.theme.CinemaBlack
 import com.apostolos.tv.ui.theme.CinemaDimens
@@ -82,6 +84,7 @@ fun LoginScreen(
     val isRestoringSession = state.isLoading &&
         state.step == LoginStep.ACCOUNT &&
         state.accountEmail != null
+    val isTv = rememberIsTvFormFactor()
 
     LaunchedEffect(state.isLoggedIn) {
         if (state.isLoggedIn) onLoggedIn()
@@ -108,6 +111,17 @@ fun LoginScreen(
                         LoginStep.ACCOUNT -> AccountStep(state = state, viewModel = viewModel)
                         LoginStep.XTREAM -> XtreamStep(state = state, viewModel = viewModel)
                     }
+                }
+
+                if (isTv) {
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text(
+                        text = "TV: Χρησιμοποίησε Bluetooth πληκτρολόγιο ή το app Companion για login. " +
+                            "Μετά την πρώτη σύνδεση, η συνεδρία αποθηκεύεται αυτόματα.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = CinemaOnDarkMuted,
+                        textAlign = TextAlign.Center,
+                    )
                 }
 
                 Spacer(modifier = Modifier.height(24.dp))
@@ -514,7 +528,8 @@ private fun LoginButton(
         enabled = !isLoading,
         modifier = Modifier
             .fillMaxWidth()
-            .height(52.dp),
+            .height(if (rememberIsTvFormFactor()) 58.dp else 52.dp)
+            .focusScale(),
         shape = RoundedCornerShape(14.dp),
         colors = ButtonDefaults.buttonColors(
             containerColor = CinemaPrimary,

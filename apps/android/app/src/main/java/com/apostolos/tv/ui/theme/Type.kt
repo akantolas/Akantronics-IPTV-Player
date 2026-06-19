@@ -87,3 +87,23 @@ val CinemaTypography = Typography(
         letterSpacing = 0.4.sp,
     ),
 )
+
+private fun TextStyle.scaled(scale: Float) = copy(
+    fontSize = (fontSize.value * scale).sp,
+    lineHeight = (lineHeight.value * scale).sp,
+)
+
+val CinemaTvTypography = Typography(
+    displayLarge = CinemaTypography.displayLarge.scaled(1.15f),
+    headlineLarge = CinemaTypography.headlineLarge.scaled(1.15f),
+    headlineMedium = CinemaTypography.headlineMedium.scaled(1.12f),
+    headlineSmall = CinemaTypography.headlineSmall.scaled(1.12f),
+    titleLarge = CinemaTypography.titleLarge.scaled(1.12f),
+    titleMedium = CinemaTypography.titleMedium.scaled(1.12f),
+    bodyLarge = CinemaTypography.bodyLarge.scaled(1.12f),
+    bodyMedium = CinemaTypography.bodyMedium.scaled(1.12f),
+    bodySmall = CinemaTypography.bodySmall.scaled(1.1f),
+    labelLarge = CinemaTypography.labelLarge.scaled(1.12f),
+    labelMedium = CinemaTypography.labelMedium.scaled(1.12f),
+    labelSmall = CinemaTypography.labelSmall.scaled(1.1f),
+)
