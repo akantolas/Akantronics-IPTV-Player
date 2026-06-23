@@ -20,6 +20,10 @@ apps/android-tv/local.properties
 apps/android-tv/**/build/
 apps/android-tv/**/*.apk
 apps/android-tv/**/*.aab
+apps/tizen-tv/node_modules/
+apps/tizen-tv/dist/
+apps/tizen-tv/local.config.js
+apps/tizen-tv/**/*.wgt
 
 # OS
 .DS_Store

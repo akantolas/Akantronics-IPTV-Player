@@ -3,11 +3,14 @@
   "private": true,
   "scripts": {
     "build": "npm run build --workspace=@tv/xtream-core",
+    "build:tizen": "npm run build --workspace=@tv/tizen-tv",
     "test": "npm run test --workspace=@tv/xtream-core",
-    "typecheck": "npm run typecheck --workspace=@tv/xtream-core"
+    "typecheck": "npm run typecheck --workspace=@tv/xtream-core && npm run typecheck --workspace=@tv/tizen-tv",
+    "typecheck:tizen": "npm run typecheck --workspace=@tv/tizen-tv"
   },
   "workspaces": [
-    "packages/*"
+    "packages/*",
+    "apps/tizen-tv"
   ],
   "engines": {
     "node": ">=20"

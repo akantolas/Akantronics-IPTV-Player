@@ -6,6 +6,7 @@ import type {
   SeriesInfo,
   SeriesItem,
   VodCategory,
+  VodInfo,
   VodStream,
   XtreamCredentials,
   XtreamUserInfo,
@@ -36,11 +37,12 @@ export class XtreamClient {
   async authenticate(): Promise<XtreamUserInfo> {
     const url = buildPlayerApiUrl(this.credentials);
     const response = await this.request(url);
-    const data = (await response.json()) as XtreamUserInfo;
-    if (data.auth === 0) {
+    const payload = (await response.json()) as Record<string, unknown> & XtreamUserInfo;
+    const userRaw = (payload.user_info ?? payload) as XtreamUserInfo;
+    if (Number(userRaw.auth) === 0) {
       throw new XtreamError("Invalid username or password.");
     }
-    return data;
+    return normalizeUserInfo(userRaw);
   }
 
   async getLiveCategories(): Promise<LiveCategory[]> {
@@ -82,6 +84,12 @@ export class XtreamClient {
     });
   }
 
+  async getVodInfo(vodId: number | string): Promise<VodInfo> {
+    return this.fetchAction("get_vod_info", {
+      vod_id: String(vodId),
+    });
+  }
+
   private async fetchAction<T>(
     action: string,
     extraParams: Record<string, string> = {},
@@ -112,4 +120,12 @@ export class XtreamClient {
     }
     return response;
   }
+}
+
+function normalizeUserInfo(raw: XtreamUserInfo): XtreamUserInfo {
+  return {
+    ...raw,
+    auth: raw.auth != null ? Number(raw.auth) : undefined,
+    exp_date: raw.exp_date != null && String(raw.exp_date).trim() !== "" ? String(raw.exp_date) : undefined,
+  };
 }

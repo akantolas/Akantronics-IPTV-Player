@@ -60,6 +60,34 @@ export interface VodStream {
   direct_source?: string;
 }
 
+export interface VodDetailInfo {
+  name?: string;
+  movie_image?: string;
+  cover_big?: string;
+  plot?: string;
+  description?: string;
+  rating?: string;
+  genre?: string;
+  releasedate?: string;
+  release_date?: string;
+  duration?: string;
+  director?: string;
+  cast?: string;
+  country?: string;
+  subtitles?: unknown;
+}
+
+export interface VodInfo {
+  info: VodDetailInfo;
+  movie_data?: VodStream;
+}
+
+export interface ExternalSubtitleRef {
+  url: string;
+  label: string;
+  language?: string;
+}
+
 export interface SeriesCategory {
   category_id: string;
   category_name: string;

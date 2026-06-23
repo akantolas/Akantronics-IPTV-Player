@@ -1,0 +1,7 @@
+# Add new build outputs from the Tizen TV project.
+apps/tizen-tv/.gradle/
+apps/tizen-tv/.idea/
+apps/tizen-tv/local.config.js
+apps/tizen-tv/**/build/
+apps/tizen-tv/dist/
+apps/tizen-tv/**/*.wgt
