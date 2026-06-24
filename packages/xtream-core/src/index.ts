@@ -15,7 +15,10 @@ export type {
   SeriesItem,
   StreamKind,
   VodCategory,
+  VodDetailInfo,
+  VodInfo,
   VodStream,
+  ExternalSubtitleRef,
   XtreamCredentials,
   XtreamUserInfo,
 } from "./types.js";
