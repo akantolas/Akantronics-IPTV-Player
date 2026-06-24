@@ -50,11 +50,14 @@ import com.apostolos.tv.data.model.LiveCategory
 import com.apostolos.tv.data.model.LiveStream
 import com.apostolos.tv.data.model.WatchEntry
 import com.apostolos.tv.ui.common.CinemaAsyncImage
+import com.apostolos.tv.ui.common.ContentFade
 import com.apostolos.tv.ui.common.ErrorState
 import com.apostolos.tv.ui.common.LoadingScreenSkeleton
 import com.apostolos.tv.ui.common.RecentlyViewedSection
 import com.apostolos.tv.ui.common.SectionTitle
+import com.apostolos.tv.ui.common.continueLabel
 import com.apostolos.tv.ui.common.focusScale
+import com.apostolos.tv.ui.common.tvClickable
 import com.apostolos.tv.ui.settings.ExpiryUrgency
 import com.apostolos.tv.ui.theme.CinemaAccent
 import com.apostolos.tv.ui.theme.CinemaBlack
@@ -72,7 +75,7 @@ private val CinemaWarning = Color(0xFFFFB347)
 @Composable
 fun DashboardScreen(
     viewModel: DashboardViewModel,
-    onLiveClick: (LiveStream) -> Unit,
+    onLiveClick: (LiveStream, List<LiveStream>) -> Unit,
     onWatchEntry: (WatchEntry) -> Unit,
     onBrowseLive: () -> Unit,
     onBrowseLiveCategory: (String) -> Unit,
@@ -99,18 +102,34 @@ fun DashboardScreen(
             )
         }
         else -> {
+            ContentFade(visible = true) {
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(bottom = 28.dp),
             ) {
                 item {
-                    QuickPlayHero(
+                    CinematicHero(
+                        heroEntry = state.heroEntry,
+                        quickPlayChannel = state.quickPlayChannel,
                         playlistName = state.playlistName,
-                        channel = state.quickPlayChannel,
-                        onPlay = {
-                            state.quickPlayChannel?.let(onLiveClick) ?: onBrowseLive()
+                        onPlayHero = { state.heroEntry?.let(onWatchEntry) },
+                        onPlayLive = {
+                            state.quickPlayChannel?.let { channel ->
+                                onLiveClick(channel, state.recentChannels)
+                            } ?: onBrowseLive()
                         },
                     )
+                }
+
+                if (state.continueWatching.isNotEmpty()) {
+                    item {
+                        RecentlyViewedSection(
+                            title = "Συνέχισε την παρακολούθηση",
+                            entries = state.continueWatching,
+                            onEntryClick = onWatchEntry,
+                            onRemoveEntry = viewModel::removeFromHistory,
+                        )
+                    }
                 }
 
                 item {
@@ -137,7 +156,9 @@ fun DashboardScreen(
                             title = "Πρόσφατα Live TV",
                             icon = Icons.Default.LiveTv,
                             channels = state.recentChannels,
-                            onChannelClick = onLiveClick,
+                            onChannelClick = { channel ->
+                                onLiveClick(channel, state.recentChannels)
+                            },
                             onSeeAll = onBrowseLive,
                         )
                     }
@@ -175,7 +196,9 @@ fun DashboardScreen(
                             title = "Αγαπημένα",
                             icon = Icons.Default.Favorite,
                             channels = state.favoriteChannels,
-                            onChannelClick = onLiveClick,
+                            onChannelClick = { channel ->
+                                onLiveClick(channel, state.favoriteChannels)
+                            },
                             onSeeAll = onBrowseLive,
                         )
                     }
@@ -184,7 +207,9 @@ fun DashboardScreen(
                 items(state.categoryPreviews, key = { it.categoryId }) { preview ->
                     CategoryPreviewRow(
                         preview = preview,
-                        onChannelClick = onLiveClick,
+                        onChannelClick = { channel ->
+                            onLiveClick(channel, preview.channels)
+                        },
                         onSeeAll = { onBrowseLiveCategory(preview.categoryId) },
                     )
                 }
@@ -202,76 +227,80 @@ fun DashboardScreen(
                     )
                 }
             }
+            }
         }
     }
 }
 
 @Composable
-private fun QuickPlayHero(
+private fun CinematicHero(
+    heroEntry: WatchEntry?,
+    quickPlayChannel: LiveStream?,
     playlistName: String,
-    channel: LiveStream?,
-    onPlay: () -> Unit,
+    onPlayHero: () -> Unit,
+    onPlayLive: () -> Unit,
 ) {
+    val hasHero = heroEntry != null
+    val backdropUrl = when {
+        hasHero -> heroEntry?.imageUrl
+        else -> quickPlayChannel?.streamIcon
+    }
+    val headline = when {
+        hasHero -> heroEntry?.title.orEmpty()
+        quickPlayChannel != null -> quickPlayChannel.name
+        else -> "Live TV"
+    }
+    val tagline = when {
+        hasHero -> heroEntry?.continueLabel().orEmpty()
+        quickPlayChannel != null -> "Συνέχεια ζωντανά"
+        else -> "Άνοιγμα καναλιών"
+    }
+    val onClick = if (hasHero) onPlayHero else onPlayLive
+
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = CinemaDimens.screenPadding, vertical = 12.dp)
-            .clip(RoundedCornerShape(18.dp))
-            .background(
-                Brush.linearGradient(
-                    colors = listOf(
-                        CinemaPrimary.copy(alpha = 0.35f),
-                        CinemaAccent.copy(alpha = 0.22f),
-                        CinemaSurfaceHigh,
+            .height(220.dp)
+            .clip(RoundedCornerShape(20.dp))
+            .focusScale()
+            .tvClickable(onClick = onClick)
+    ) {
+        CinemaAsyncImage(
+            model = backdropUrl?.takeIf { it.isNotBlank() },
+            contentDescription = headline,
+            modifier = Modifier.fillMaxSize(),
+            cornerRadius = 0,
+        )
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(
+                    Brush.verticalGradient(
+                        colors = listOf(
+                            Color.Transparent,
+                            CinemaBlack.copy(alpha = 0.55f),
+                            CinemaBlack.copy(alpha = 0.92f),
+                        ),
                     ),
                 ),
-            )
-            .border(1.dp, CinemaPrimary.copy(alpha = 0.25f), RoundedCornerShape(18.dp))
-            .clickable(onClick = onPlay)
-            .focusScale()
-            .padding(18.dp),
-    ) {
+        )
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .align(Alignment.BottomStart)
+                .fillMaxWidth()
+                .padding(20.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            if (channel != null) {
-                CinemaAsyncImage(
-                    model = channel.streamIcon.takeIf { it.isNotBlank() },
-                    contentDescription = channel.name,
-                    modifier = Modifier.size(72.dp),
-                    cornerRadius = 14,
-                )
-            } else {
-                Box(
-                    modifier = Modifier
-                        .size(72.dp)
-                        .clip(RoundedCornerShape(14.dp))
-                        .background(CinemaSurface.copy(alpha = 0.6f)),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.LiveTv,
-                        contentDescription = null,
-                        tint = CinemaPrimary,
-                        modifier = Modifier.size(36.dp),
-                    )
-                }
-            }
-
-            Column(
-                modifier = Modifier
-                    .weight(1f)
-                    .padding(horizontal = 14.dp),
-            ) {
+            Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = if (channel != null) "Συνέχεια ζωντανά" else "Live TV",
+                    text = tagline,
                     style = MaterialTheme.typography.labelMedium,
                     color = CinemaPrimary,
                 )
                 Text(
-                    text = channel?.name ?: "Άνοιγμα καναλιών",
-                    style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.SemiBold),
+                    text = headline,
+                    style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold),
                     color = CinemaOnDark,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
@@ -283,15 +312,25 @@ private fun QuickPlayHero(
                         color = CinemaOnDarkMuted,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.padding(top = 2.dp),
+                        modifier = Modifier.padding(top = 4.dp),
+                    )
+                }
+                if (hasHero && heroEntry!!.isInProgress) {
+                    androidx.compose.material3.LinearProgressIndicator(
+                        progress = { heroEntry.progressFraction },
+                        modifier = Modifier
+                            .fillMaxWidth(0.6f)
+                            .padding(top = 10.dp)
+                            .height(4.dp)
+                            .clip(RoundedCornerShape(2.dp)),
+                        color = CinemaPrimary,
                     )
                 }
             }
-
             Box(
                 modifier = Modifier
-                    .size(44.dp)
-                    .clip(RoundedCornerShape(22.dp))
+                    .size(52.dp)
+                    .clip(RoundedCornerShape(26.dp))
                     .background(CinemaPrimary),
                 contentAlignment = Alignment.Center,
             ) {
@@ -299,7 +338,7 @@ private fun QuickPlayHero(
                     imageVector = Icons.Default.PlayArrow,
                     contentDescription = "Αναπαραγωγή",
                     tint = CinemaBlack,
-                    modifier = Modifier.size(28.dp),
+                    modifier = Modifier.size(32.dp),
                 )
             }
         }
@@ -425,6 +464,7 @@ private fun CategoryChipRow(
                 FilterChip(
                     selected = false,
                     onClick = { onCategoryClick(category.categoryId) },
+                    modifier = Modifier.focusScale(focusedScale = 1.06f),
                     label = {
                         Text(
                             text = category.categoryName,
@@ -539,11 +579,11 @@ private fun LiveChannelTile(
     Column(
         modifier = Modifier
             .width(84.dp)
-            .focusScale()
             .clip(RoundedCornerShape(CinemaDimens.posterCorner))
             .background(CinemaSurface)
             .border(1.dp, CinemaSurfaceBorder, RoundedCornerShape(CinemaDimens.posterCorner))
-            .clickable(onClick = onClick)
+            .focusScale()
+            .tvClickable(onClick = onClick)
             .padding(8.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
@@ -625,7 +665,7 @@ private fun VodShortcutCard(
     Card(
         modifier = modifier
             .focusScale()
-            .clickable(onClick = onClick),
+            .tvClickable(onClick = onClick),
         colors = CardDefaults.cardColors(containerColor = CinemaSurface),
         shape = RoundedCornerShape(14.dp),
     ) {

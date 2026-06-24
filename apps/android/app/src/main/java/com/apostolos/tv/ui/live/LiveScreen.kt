@@ -21,6 +21,7 @@ import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -40,6 +41,8 @@ import com.apostolos.tv.ui.common.ContentPosterRow
 import com.apostolos.tv.ui.common.EmptyState
 import com.apostolos.tv.ui.common.PosterRowItem
 import com.apostolos.tv.ui.common.focusScale
+import com.apostolos.tv.ui.common.requestInitialFocus
+import com.apostolos.tv.ui.common.tvClickable
 import com.apostolos.tv.ui.common.ErrorState
 import com.apostolos.tv.ui.common.FavoriteButton
 import com.apostolos.tv.ui.common.LoadingScreenSkeleton
@@ -60,7 +63,10 @@ fun LiveScreen(
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val playerState by playerViewModel.uiState.collectAsStateWithLifecycle()
     val recentChannels by viewModel.recentChannels.collectAsStateWithLifecycle()
-    categoryVisibility.state.collectAsStateWithLifecycle()
+
+    LaunchedEffect(Unit) {
+        viewModel.ensureLoaded()
+    }
 
     val visibleCategories = state.categories.filter { category ->
         categoryVisibility.isVisible(ContentSection.LIVE, category.categoryId) ||
@@ -137,13 +143,15 @@ fun LiveScreen(
                     )
                 } else {
                     LazyColumn(contentPadding = PaddingValues(bottom = 16.dp)) {
-                        items(state.streams, key = { it.streamId }) { stream ->
+                        items(state.streams.size, key = { state.streams[it].streamId }) { index ->
+                            val stream = state.streams[index]
                             ChannelRow(
                                 stream = stream,
                                 selected = playerState.activeLiveStreamId == stream.streamId,
                                 isFavorite = viewModel.isFavorite(stream),
                                 onToggleFavorite = { viewModel.toggleFavorite(stream) },
                                 onClick = { onOpenDetail(stream) },
+                                requestInitialFocus = index == 0,
                             )
                         }
                     }
@@ -160,10 +168,13 @@ private fun ChannelRow(
     isFavorite: Boolean,
     onToggleFavorite: () -> Unit,
     onClick: () -> Unit,
+    requestInitialFocus: Boolean = false,
+    modifier: Modifier = Modifier,
 ) {
     val rowShape = RoundedCornerShape(12.dp)
     ListItem(
-        modifier = Modifier
+        modifier = modifier
+            .then(if (requestInitialFocus) Modifier.requestInitialFocus() else Modifier)
             .padding(horizontal = CinemaDimens.screenPadding, vertical = 2.dp)
             .clip(rowShape)
             .background(if (selected) CinemaPrimary.copy(alpha = 0.12f) else CinemaSurface)
@@ -173,7 +184,7 @@ private fun ChannelRow(
                 shape = rowShape,
             )
             .focusScale()
-            .clickable(onClick = onClick),
+            .tvClickable(onClick = onClick),
         colors = ListItemDefaults.colors(
             containerColor = androidx.compose.ui.graphics.Color.Transparent,
             headlineColor = MaterialTheme.colorScheme.onSurface,

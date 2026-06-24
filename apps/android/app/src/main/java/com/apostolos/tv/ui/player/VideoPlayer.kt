@@ -25,11 +25,16 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.filled.Forward10
+import androidx.compose.material.icons.filled.Replay10
+import androidx.compose.material.icons.filled.AspectRatio
 import androidx.compose.material.icons.filled.ClosedCaption
 import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.FullscreenExit
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Timer
+import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -67,9 +72,22 @@ import androidx.media3.ui.PlayerView
 import com.apostolos.tv.ui.theme.CinemaOnDark
 import com.apostolos.tv.ui.theme.CinemaPrimary
 import com.apostolos.tv.ui.theme.CinemaSurface
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
+import com.apostolos.tv.data.model.EpgProgramme
+import com.apostolos.tv.ui.common.EpgNowNextSection
+import com.apostolos.tv.ui.common.rememberIsTvFormFactor
 import kotlinx.coroutines.delay
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 @Composable
 fun VideoPlayer(
@@ -80,11 +98,30 @@ fun VideoPlayer(
     isLive: Boolean = false,
     startPositionMs: Long = 0L,
     externalSubtitles: List<ExternalSubtitleSource> = emptyList(),
+    aspectMode: VideoAspectMode = VideoAspectMode.FIT,
+    sleepTimerEndsAtMs: Long? = null,
+    playbackSpeed: Float = 1f,
+    nowProgramme: EpgProgramme? = null,
+    nextProgramme: EpgProgramme? = null,
+    showChannelBrowser: Boolean = false,
+    numericInputBuffer: String = "",
     onError: (String) -> Unit = {},
     onPlaybackEnded: (() -> Unit)? = null,
-    onProgressUpdate: (positionMs: Long, durationMs: Long) -> Unit = { _, _ -> },
+    onProgressUpdate: (positionMs: Long, durationMs: Long, force: Boolean) -> Unit = { _, _, _ -> },
+    onAspectModeCycle: () -> Unit = {},
+    onSleepTimerSelect: (Int?) -> Unit = {},
+    onSleepTimerClear: () -> Unit = {},
+    onZapPrevious: (() -> Unit)? = null,
+    onZapNext: (() -> Unit)? = null,
+    onToggleChannelBrowser: (() -> Unit)? = null,
+    onDismissChannelBrowser: (() -> Unit)? = null,
+    onNumericDigit: ((Int) -> Unit)? = null,
+    onConfirmNumericZap: (() -> Unit)? = null,
+    onSpeedCycle: (() -> Unit)? = null,
+    onControlsVisibilityChange: (Boolean) -> Unit = {},
 ) {
     val context = LocalContext.current
+    val isTv = rememberIsTvFormFactor()
     var isFullscreen by remember { mutableStateOf(false) }
 
     val exoPlayer = remember {
@@ -97,11 +134,17 @@ fun VideoPlayer(
     var isBuffering by remember { mutableStateOf(true) }
     var positionMs by remember { mutableLongStateOf(0L) }
     var durationMs by remember { mutableLongStateOf(0L) }
-    var showControls by remember { mutableStateOf(true) }
+    var showControls by remember { mutableStateOf(!isTv) }
+    var controlsHideGeneration by remember { mutableIntStateOf(0) }
+    val showImmersiveChrome = isFullscreen || isTv
     var textTracks by remember { mutableStateOf(emptyList<PlayerTextTrack>()) }
     var selectedTextTrack by remember { mutableStateOf<PlayerTextTrack?>(null) }
     var showSubtitleDialog by remember { mutableStateOf(false) }
+    var showAudioDialog by remember { mutableStateOf(false) }
+    var showSleepTimerDialog by remember { mutableStateOf(false) }
     var currentTracks by remember { mutableStateOf<Tracks?>(null) }
+    var audioTracks by remember { mutableStateOf(emptyList<PlayerAudioTrack>()) }
+    var selectedAudioTrack by remember { mutableStateOf<PlayerAudioTrack?>(null) }
     val isSeekingRef = remember { AtomicBoolean(false) }
     val pendingSeekRef = remember(streamUrl, startPositionMs) {
         AtomicLong(startPositionMs.coerceAtLeast(0L))
@@ -111,6 +154,8 @@ fun VideoPlayer(
     DisposableEffect(streamUrl, startPositionMs, externalSubtitles) {
         textTracks = emptyList()
         selectedTextTrack = null
+        audioTracks = emptyList()
+        selectedAudioTrack = null
         currentTracks = null
         pendingSeekRef.set(startPositionMs.coerceAtLeast(0L))
         val listener = object : Player.Listener {
@@ -126,6 +171,8 @@ fun VideoPlayer(
                 currentTracks = tracks
                 textTracks = SubtitleTracks.extract(tracks)
                 selectedTextTrack = SubtitleTracks.findSelected(tracks, exoPlayer.trackSelectionParameters)
+                audioTracks = AudioTracks.extract(tracks)
+                selectedAudioTrack = AudioTracks.findSelected(tracks, exoPlayer.trackSelectionParameters)
             }
 
             override fun onPlaybackStateChanged(playbackState: Int) {
@@ -144,6 +191,7 @@ fun VideoPlayer(
                     onProgressUpdate(
                         exoPlayer.duration.coerceAtLeast(0L),
                         exoPlayer.duration.coerceAtLeast(0L),
+                        true,
                     )
                     onPlaybackEnded?.invoke()
                 }
@@ -165,12 +213,12 @@ fun VideoPlayer(
                         durationMs = duration
                         seekSlider = positionMs.toFloat() / duration
                     }
-                    onProgressUpdate(current, duration)
+                    onProgressUpdate(current, duration, false)
                 } else if (current >= 5_000L) {
                     if (!isSeekingRef.get()) {
                         positionMs = current
                     }
-                    onProgressUpdate(current, 0L)
+                    onProgressUpdate(current, 0L, false)
                 }
                 handler.postDelayed(this, PROGRESS_INTERVAL_MS)
             }
@@ -180,9 +228,9 @@ fun VideoPlayer(
         onDispose {
             val duration = exoPlayer.duration
             if (duration > 0L) {
-                onProgressUpdate(exoPlayer.currentPosition, duration)
+                onProgressUpdate(exoPlayer.currentPosition, duration, true)
             } else if (exoPlayer.currentPosition >= 5_000L) {
-                onProgressUpdate(exoPlayer.currentPosition, 0L)
+                onProgressUpdate(exoPlayer.currentPosition, 0L, true)
             }
             handler.removeCallbacks(progressRunnable)
             exoPlayer.removeListener(listener)
@@ -193,11 +241,85 @@ fun VideoPlayer(
         onDispose { exoPlayer.release() }
     }
 
-    LaunchedEffect(showControls, isPlaying) {
+    LaunchedEffect(playbackSpeed) {
+        exoPlayer.setPlaybackSpeed(playbackSpeed)
+    }
+
+    LaunchedEffect(showControls) {
+        onControlsVisibilityChange(showControls)
+    }
+
+    LaunchedEffect(showControls, isPlaying, controlsHideGeneration) {
         if (showControls && isPlaying && !isBuffering) {
-            delay(CONTROLS_HIDE_DELAY_MS)
+            delay(
+                if (showImmersiveChrome) {
+                    IMMERSIVE_CONTROLS_HIDE_DELAY_MS
+                } else {
+                    CONTROLS_HIDE_DELAY_MS
+                },
+            )
             showControls = false
         }
+    }
+
+    fun revealControls() {
+        showControls = true
+        controlsHideGeneration++
+    }
+
+    fun handleRemoteKey(event: androidx.compose.ui.input.key.KeyEvent): Boolean {
+        if (event.type != KeyEventType.KeyDown) return false
+
+        event.key.toDigitOrNull()?.let { digit ->
+            if (isLive) {
+                onNumericDigit?.invoke(digit)
+                revealControls()
+                return true
+            }
+        }
+
+        when (event.key) {
+            Key.Back -> {
+                if (showChannelBrowser) {
+                    onDismissChannelBrowser?.invoke()
+                    return true
+                }
+                return false
+            }
+            Key.DirectionLeft, Key.Menu -> {
+                if (isLive) {
+                    onToggleChannelBrowser?.invoke()
+                    revealControls()
+                    return true
+                }
+            }
+            Key.DirectionCenter, Key.Enter, Key.NumPadEnter -> {
+                if (isLive && numericInputBuffer.isNotEmpty()) {
+                    onConfirmNumericZap?.invoke()
+                    return true
+                }
+            }
+            Key.DirectionUp, Key.PageUp -> {
+                revealControls()
+                if (isLive) {
+                    onZapPrevious?.invoke()
+                    return true
+                }
+                return false
+            }
+            Key.DirectionDown, Key.PageDown -> {
+                revealControls()
+                if (isLive) {
+                    onZapNext?.invoke()
+                    return true
+                }
+                return false
+            }
+            else -> Unit
+        }
+
+        revealControls()
+        return false
     }
 
     if (showSubtitleDialog) {
@@ -212,13 +334,49 @@ fun VideoPlayer(
                     selectedTextTrack = track
                 }
                 showSubtitleDialog = false
-                showControls = true
+                revealControls()
+            },
+        )
+    }
+
+    if (showAudioDialog) {
+        AudioSelectionDialog(
+            tracks = audioTracks,
+            selectedTrack = selectedAudioTrack,
+            onDismiss = { showAudioDialog = false },
+            onSelect = { track ->
+                val tracks = currentTracks
+                if (tracks != null && track != null) {
+                    AudioTracks.applySelection(exoPlayer, tracks, track)
+                    selectedAudioTrack = track
+                }
+                showAudioDialog = false
+                revealControls()
+            },
+        )
+    }
+
+    if (showSleepTimerDialog) {
+        SleepTimerDialog(
+            activeEndsAtMs = sleepTimerEndsAtMs,
+            onDismiss = { showSleepTimerDialog = false },
+            onSelect = { minutes ->
+                onSleepTimerSelect(minutes)
+                showSleepTimerDialog = false
+                revealControls()
+            },
+            onClear = {
+                onSleepTimerClear()
+                showSleepTimerDialog = false
+                revealControls()
             },
         )
     }
 
     val playerContent: @Composable (Modifier) -> Unit = { surfaceModifier ->
-        Box(modifier = surfaceModifier) {
+        Box(
+            modifier = surfaceModifier.onPreviewKeyEvent(::handleRemoteKey),
+        ) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -226,11 +384,12 @@ fun VideoPlayer(
                         interactionSource = remember { MutableInteractionSource() },
                         indication = null,
                     ) {
-                        showControls = !showControls
+                        revealControls()
                     },
             ) {
                 ExoPlayerSurface(
                     exoPlayer = exoPlayer,
+                    aspectMode = aspectMode,
                     modifier = Modifier.fillMaxSize(),
                 )
             }
@@ -249,6 +408,14 @@ fun VideoPlayer(
                 }
             }
 
+            if (!showControls && showImmersiveChrome) {
+                ImmersiveClockBadge(
+                    modifier = Modifier
+                        .align(Alignment.TopStart)
+                        .padding(16.dp),
+                )
+            }
+
             AnimatedVisibility(
                 visible = showControls,
                 enter = fadeIn(),
@@ -263,15 +430,21 @@ fun VideoPlayer(
                     positionMs = positionMs,
                     durationMs = durationMs,
                     seekSlider = seekSlider,
+                    aspectMode = aspectMode,
+                    sleepTimerEndsAtMs = sleepTimerEndsAtMs,
+                    playbackSpeed = playbackSpeed,
+                    nowProgramme = nowProgramme,
+                    nextProgramme = nextProgramme,
                     hasSubtitles = !isLive && textTracks.isNotEmpty(),
                     subtitlesEnabled = selectedTextTrack != null,
+                    hasAudioTracks = audioTracks.size > 1,
                     onPlayPause = {
                         if (exoPlayer.isPlaying) exoPlayer.pause() else exoPlayer.play()
-                        showControls = true
+                        revealControls()
                     },
                     onSeekStart = {
                         isSeekingRef.set(true)
-                        showControls = true
+                        revealControls()
                     },
                     onSeekChange = { value ->
                         seekSlider = value
@@ -287,20 +460,80 @@ fun VideoPlayer(
                             positionMs = target
                         }
                     },
-                    onFullscreenToggle = { isFullscreen = !isFullscreen },
+                    onSkipBack = {
+                        val target = (exoPlayer.currentPosition - SKIP_STEP_MS).coerceAtLeast(0L)
+                        exoPlayer.seekTo(target)
+                        positionMs = target
+                        if (durationMs > 0L) {
+                            seekSlider = target.toFloat() / durationMs
+                        }
+                        revealControls()
+                    },
+                    onSkipForward = {
+                        val duration = exoPlayer.duration.coerceAtLeast(0L)
+                        val target = if (duration > 0L) {
+                            (exoPlayer.currentPosition + SKIP_STEP_MS).coerceAtMost(duration)
+                        } else {
+                            exoPlayer.currentPosition + SKIP_STEP_MS
+                        }
+                        exoPlayer.seekTo(target)
+                        positionMs = target
+                        if (duration > 0L) {
+                            seekSlider = target.toFloat() / duration
+                        }
+                        revealControls()
+                    },
+                    onSpeedCycle = {
+                        onSpeedCycle?.invoke()
+                        revealControls()
+                    },
+                    onFullscreenToggle = {
+                        if (isFullscreen) {
+                            isFullscreen = false
+                            revealControls()
+                        } else {
+                            isFullscreen = true
+                            showControls = false
+                        }
+                    },
                     onSubtitlesClick = {
                         showSubtitleDialog = true
-                        showControls = true
+                        revealControls()
                     },
+                    onAudioClick = {
+                        showAudioDialog = true
+                        revealControls()
+                    },
+                    onAspectClick = {
+                        onAspectModeCycle()
+                        revealControls()
+                    },
+                    onSleepTimerClick = {
+                        showSleepTimerDialog = true
+                        revealControls()
+                    },
+                )
+            }
+
+            if (!isTv) {
+                PlayerSwipeGestureLayer(
+                    modifier = Modifier.fillMaxSize(),
+                    enabled = true,
                 )
             }
         }
     }
 
     if (isFullscreen) {
-        BackHandler { isFullscreen = false }
+        BackHandler {
+            isFullscreen = false
+            revealControls()
+        }
         Dialog(
-            onDismissRequest = { isFullscreen = false },
+            onDismissRequest = {
+                isFullscreen = false
+                revealControls()
+            },
             properties = DialogProperties(
                 dismissOnBackPress = true,
                 dismissOnClickOutside = false,
@@ -333,6 +566,28 @@ fun VideoPlayer(
 }
 
 @Composable
+private fun ImmersiveClockBadge(modifier: Modifier = Modifier) {
+    var clockText by remember { mutableStateOf(formatWallClock()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(1_000L)
+            clockText = formatWallClock()
+        }
+    }
+    Text(
+        text = clockText,
+        modifier = modifier
+            .background(Color.Black.copy(alpha = 0.32f), RoundedCornerShape(8.dp))
+            .padding(horizontal = 10.dp, vertical = 5.dp),
+        style = MaterialTheme.typography.labelLarge,
+        color = Color.White.copy(alpha = 0.72f),
+    )
+}
+
+private fun formatWallClock(): String =
+    SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
+
+@Composable
 private fun PlayerControlsOverlay(
     title: String,
     subtitle: String,
@@ -342,14 +597,26 @@ private fun PlayerControlsOverlay(
     positionMs: Long,
     durationMs: Long,
     seekSlider: Float,
+    aspectMode: VideoAspectMode,
+    sleepTimerEndsAtMs: Long?,
+    playbackSpeed: Float,
+    nowProgramme: EpgProgramme?,
+    nextProgramme: EpgProgramme?,
     hasSubtitles: Boolean,
     subtitlesEnabled: Boolean,
+    hasAudioTracks: Boolean,
     onPlayPause: () -> Unit,
     onSeekStart: () -> Unit,
     onSeekChange: (Float) -> Unit,
     onSeekFinish: () -> Unit,
+    onSkipBack: () -> Unit,
+    onSkipForward: () -> Unit,
+    onSpeedCycle: () -> Unit,
     onFullscreenToggle: () -> Unit,
     onSubtitlesClick: () -> Unit,
+    onAudioClick: () -> Unit,
+    onAspectClick: () -> Unit,
+    onSleepTimerClick: () -> Unit,
 ) {
     Box(modifier = Modifier.fillMaxSize()) {
         if (title.isNotBlank()) {
@@ -382,6 +649,14 @@ private fun PlayerControlsOverlay(
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.padding(top = 2.dp),
+                    )
+                }
+                if (isLive && (nowProgramme != null || nextProgramme != null)) {
+                    EpgNowNextSection(
+                        now = nowProgramme,
+                        next = nextProgramme,
+                        compact = true,
+                        modifier = Modifier.padding(top = 8.dp),
                     )
                 }
             }
@@ -430,12 +705,43 @@ private fun PlayerControlsOverlay(
                     PlayerBottomActions(
                         hasSubtitles = hasSubtitles,
                         subtitlesEnabled = subtitlesEnabled,
+                        hasAudioTracks = hasAudioTracks,
                         isFullscreen = isFullscreen,
+                        aspectMode = aspectMode,
+                        sleepTimerEndsAtMs = sleepTimerEndsAtMs,
                         onSubtitlesClick = onSubtitlesClick,
+                        onAudioClick = onAudioClick,
+                        onAspectClick = onAspectClick,
+                        onSleepTimerClick = onSleepTimerClick,
                         onFullscreenToggle = onFullscreenToggle,
                     )
                 }
             } else if (durationMs > 0L) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    IconButton(onClick = onSkipBack) {
+                        Icon(
+                            imageVector = Icons.Default.Replay10,
+                            contentDescription = "−10 δευτ.",
+                            tint = CinemaOnDark,
+                        )
+                    }
+                    Text(
+                        text = "${formatTime(positionMs)} / ${formatTime(durationMs)}",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = CinemaOnDark.copy(alpha = 0.9f),
+                    )
+                    IconButton(onClick = onSkipForward) {
+                        Icon(
+                            imageVector = Icons.Default.Forward10,
+                            contentDescription = "+10 δευτ.",
+                            tint = CinemaOnDark,
+                        )
+                    }
+                }
                 Slider(
                     value = seekSlider.coerceIn(0f, 1f),
                     onValueChange = {
@@ -455,30 +761,43 @@ private fun PlayerControlsOverlay(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text(
-                        text = "${formatTime(positionMs)} / ${formatTime(durationMs)}",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = CinemaOnDark.copy(alpha = 0.9f),
-                    )
+                    TextButton(onClick = onSpeedCycle) {
+                        Text(
+                            text = formatPlaybackSpeed(playbackSpeed),
+                            color = if (playbackSpeed != 1f) CinemaPrimary else CinemaOnDark,
+                        )
+                    }
                     PlayerBottomActions(
                         hasSubtitles = hasSubtitles,
                         subtitlesEnabled = subtitlesEnabled,
+                        hasAudioTracks = hasAudioTracks,
                         isFullscreen = isFullscreen,
+                        aspectMode = aspectMode,
+                        sleepTimerEndsAtMs = sleepTimerEndsAtMs,
                         onSubtitlesClick = onSubtitlesClick,
+                        onAudioClick = onAudioClick,
+                        onAspectClick = onAspectClick,
+                        onSleepTimerClick = onSleepTimerClick,
                         onFullscreenToggle = onFullscreenToggle,
                     )
                 }
-            } else if (hasSubtitles) {
+            } else if (hasSubtitles || hasAudioTracks) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.End,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     PlayerBottomActions(
-                        hasSubtitles = true,
+                        hasSubtitles = hasSubtitles,
                         subtitlesEnabled = subtitlesEnabled,
+                        hasAudioTracks = hasAudioTracks,
                         isFullscreen = isFullscreen,
+                        aspectMode = aspectMode,
+                        sleepTimerEndsAtMs = sleepTimerEndsAtMs,
                         onSubtitlesClick = onSubtitlesClick,
+                        onAudioClick = onAudioClick,
+                        onAspectClick = onAspectClick,
+                        onSleepTimerClick = onSleepTimerClick,
                         onFullscreenToggle = onFullscreenToggle,
                     )
                 }
@@ -491,11 +810,40 @@ private fun PlayerControlsOverlay(
 private fun PlayerBottomActions(
     hasSubtitles: Boolean,
     subtitlesEnabled: Boolean,
+    hasAudioTracks: Boolean,
     isFullscreen: Boolean,
+    aspectMode: VideoAspectMode,
+    sleepTimerEndsAtMs: Long?,
     onSubtitlesClick: () -> Unit,
+    onAudioClick: () -> Unit,
+    onAspectClick: () -> Unit,
+    onSleepTimerClick: () -> Unit,
     onFullscreenToggle: () -> Unit,
 ) {
     Row(verticalAlignment = Alignment.CenterVertically) {
+        if (hasAudioTracks) {
+            IconButton(onClick = onAudioClick) {
+                Icon(
+                    imageVector = Icons.Default.VolumeUp,
+                    contentDescription = "Ήχος",
+                    tint = CinemaPrimary,
+                )
+            }
+        }
+        IconButton(onClick = onAspectClick) {
+            Icon(
+                imageVector = Icons.Default.AspectRatio,
+                contentDescription = aspectModeLabel(aspectMode),
+                tint = if (aspectMode == VideoAspectMode.FIT) CinemaOnDark else CinemaPrimary,
+            )
+        }
+        IconButton(onClick = onSleepTimerClick) {
+            Icon(
+                imageVector = Icons.Default.Timer,
+                contentDescription = "Sleep timer",
+                tint = if (sleepTimerEndsAtMs != null) CinemaPrimary else CinemaOnDark,
+            )
+        }
         if (hasSubtitles) {
             IconButton(onClick = onSubtitlesClick) {
                 Icon(
@@ -517,6 +865,12 @@ private fun PlayerBottomActions(
             )
         }
     }
+}
+
+private fun aspectModeLabel(mode: VideoAspectMode): String = when (mode) {
+    VideoAspectMode.FIT -> "Fit"
+    VideoAspectMode.FILL -> "Fill"
+    VideoAspectMode.ZOOM -> "Zoom"
 }
 
 @Composable
@@ -595,17 +949,93 @@ private fun LiveBadge() {
 }
 
 @Composable
+private fun AudioSelectionDialog(
+    tracks: List<PlayerAudioTrack>,
+    selectedTrack: PlayerAudioTrack?,
+    onDismiss: () -> Unit,
+    onSelect: (PlayerAudioTrack?) -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = CinemaSurface,
+        title = { Text("Ήχος") },
+        text = {
+            LazyColumn(modifier = Modifier.heightIn(max = 320.dp)) {
+                items(tracks, key = { "${it.groupIndex}:${it.trackIndex}" }) { track ->
+                    SubtitleOptionRow(
+                        label = track.label,
+                        selected = selectedTrack == track,
+                        onClick = { onSelect(track) },
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Κλείσιμο")
+            }
+        },
+    )
+}
+
+@Composable
+private fun SleepTimerDialog(
+    activeEndsAtMs: Long?,
+    onDismiss: () -> Unit,
+    onSelect: (Int?) -> Unit,
+    onClear: () -> Unit,
+) {
+    val options = listOf(15, 30, 45, 60, 90, 120)
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = CinemaSurface,
+        title = { Text("Sleep timer") },
+        text = {
+            LazyColumn(modifier = Modifier.heightIn(max = 320.dp)) {
+                if (activeEndsAtMs != null) {
+                    item {
+                        SubtitleOptionRow(
+                            label = "Απενεργοποίηση timer",
+                            selected = false,
+                            onClick = onClear,
+                        )
+                    }
+                }
+                items(options) { minutes ->
+                    SubtitleOptionRow(
+                        label = "$minutes λεπτά",
+                        selected = false,
+                        onClick = { onSelect(minutes) },
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Κλείσιμο")
+            }
+        },
+    )
+}
+
+@Composable
 private fun ExoPlayerSurface(
     exoPlayer: ExoPlayer,
+    aspectMode: VideoAspectMode,
     modifier: Modifier,
 ) {
+    val resizeMode = when (aspectMode) {
+        VideoAspectMode.FIT -> AspectRatioFrameLayout.RESIZE_MODE_FIT
+        VideoAspectMode.FILL -> AspectRatioFrameLayout.RESIZE_MODE_FILL
+        VideoAspectMode.ZOOM -> AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+    }
     AndroidView(
         modifier = modifier,
         factory = { ctx ->
             PlayerView(ctx).apply {
                 player = exoPlayer
                 useController = false
-                resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+                this.resizeMode = resizeMode
                 layoutParams = FrameLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT,
                     ViewGroup.LayoutParams.MATCH_PARENT,
@@ -614,7 +1044,7 @@ private fun ExoPlayerSurface(
         },
         update = { view ->
             view.player = exoPlayer
-            view.resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+            view.resizeMode = resizeMode
         },
     )
 }
@@ -634,3 +1064,28 @@ private fun formatTime(ms: Long): String {
 
 private const val PROGRESS_INTERVAL_MS = 1_000L
 private const val CONTROLS_HIDE_DELAY_MS = 3_500L
+private const val IMMERSIVE_CONTROLS_HIDE_DELAY_MS = 5_000L
+private const val SKIP_STEP_MS = 10_000L
+
+private fun formatPlaybackSpeed(speed: Float): String {
+    val rounded = (speed * 100).toInt() / 100f
+    return if (rounded == rounded.toLong().toFloat()) {
+        "${rounded.toLong()}x"
+    } else {
+        String.format(Locale.getDefault(), "%.2fx", rounded)
+    }
+}
+
+private fun Key.toDigitOrNull(): Int? = when (this) {
+    Key.Zero, Key.NumPad0 -> 0
+    Key.One, Key.NumPad1 -> 1
+    Key.Two, Key.NumPad2 -> 2
+    Key.Three, Key.NumPad3 -> 3
+    Key.Four, Key.NumPad4 -> 4
+    Key.Five, Key.NumPad5 -> 5
+    Key.Six, Key.NumPad6 -> 6
+    Key.Seven, Key.NumPad7 -> 7
+    Key.Eight, Key.NumPad8 -> 8
+    Key.Nine, Key.NumPad9 -> 9
+    else -> null
+}

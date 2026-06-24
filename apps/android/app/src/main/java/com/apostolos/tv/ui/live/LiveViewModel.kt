@@ -27,7 +27,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 data class LiveUiState(
-    val isLoadingCategories: Boolean = true,
+    val isLoadingCategories: Boolean = false,
     val isLoadingStreams: Boolean = false,
     val errorMessage: String? = null,
     val categories: List<LiveCategory> = emptyList(),
@@ -53,22 +53,36 @@ class LiveViewModel(
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     private var credentials: XtreamCredentials? = null
+    private var catalogLoaded = false
+    private var lastCredentials: XtreamCredentials? = null
+    private var pendingCategoryId: String? = null
 
     init {
         viewModelScope.launch {
             credentialsStore.credentialsFlow.collect { saved ->
-                if (saved != null) {
+                if (saved != lastCredentials) {
+                    lastCredentials = saved
                     credentials = saved
-                    loadCategories()
+                    catalogLoaded = false
+                    pendingCategoryId = null
+                    if (saved == null) {
+                        _uiState.value = LiveUiState()
+                    } else {
+                        _uiState.update {
+                            it.copy(
+                                categories = emptyList(),
+                                streams = emptyList(),
+                                selectedCategoryId = null,
+                                errorMessage = null,
+                            )
+                        }
+                    }
                 }
             }
         }
         viewModelScope.launch {
-            categoryVisibility.state.collect { applyCategoryFilter(reloadStreams = true) }
-        }
-        viewModelScope.launch {
             categoryVisibility.changes.collect { section ->
-                if (section == ContentSection.LIVE) {
+                if (section == ContentSection.LIVE && catalogLoaded) {
                     applyCategoryFilter(reloadStreams = true)
                 }
             }
@@ -78,15 +92,31 @@ class LiveViewModel(
         }
     }
 
+    fun ensureLoaded() {
+        if (!catalogLoaded && credentials != null) {
+            loadCategories()
+        }
+    }
+
     fun currentCredentials(): XtreamCredentials? = credentials
 
     fun reload() {
+        catalogLoaded = false
         loadCategories()
     }
 
     fun selectCategory(categoryId: String) {
+        ensureLoaded()
         val creds = credentials ?: return
         val normalizedId = normalizeCategoryId(categoryId)
+        if (!catalogLoaded) {
+            pendingCategoryId = normalizedId
+            return
+        }
+        selectCategoryInternal(creds, normalizedId)
+    }
+
+    private fun selectCategoryInternal(credentials: XtreamCredentials, normalizedId: String) {
         if (normalizeCategoryId(_uiState.value.selectedCategoryId.orEmpty()) == normalizedId) return
 
         _uiState.update {
@@ -95,7 +125,7 @@ class LiveViewModel(
 
         viewModelScope.launch {
             try {
-                val streams = loadStreamsForCategory(creds, normalizedId)
+                val streams = loadStreamsForCategory(credentials, normalizedId)
                 _uiState.update { it.copy(isLoadingStreams = false, streams = streams) }
             } catch (error: XtreamApiException) {
                 _uiState.update {
@@ -131,8 +161,15 @@ class LiveViewModel(
             _uiState.update { it.copy(isLoadingCategories = true, errorMessage = null) }
             try {
                 repository.loadLiveCategories(creds)
+                catalogLoaded = true
                 _uiState.update { it.copy(isLoadingCategories = false) }
-                applyCategoryFilter(reloadStreams = true)
+                val pending = pendingCategoryId
+                pendingCategoryId = null
+                if (pending != null) {
+                    selectCategoryInternal(creds, pending)
+                } else {
+                    applyCategoryFilter(reloadStreams = true)
+                }
             } catch (error: XtreamApiException) {
                 _uiState.update {
                     it.copy(isLoadingCategories = false, errorMessage = error.message)
@@ -162,7 +199,10 @@ class LiveViewModel(
 
         when {
             nextSelected == null -> _uiState.update { it.copy(streams = emptyList()) }
-            nextSelected != currentSelected -> selectCategory(nextSelected)
+            nextSelected != currentSelected -> {
+                val creds = credentials ?: return
+                selectCategoryInternal(creds, nextSelected)
+            }
         }
     }
 

@@ -24,6 +24,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -49,6 +50,8 @@ data class IptvHomeUiState(
     val recentChannels: List<LiveStream> = emptyList(),
     val recentMovies: List<WatchEntry> = emptyList(),
     val recentSeries: List<WatchEntry> = emptyList(),
+    val continueWatching: List<WatchEntry> = emptyList(),
+    val heroEntry: WatchEntry? = null,
     val favoriteChannels: List<LiveStream> = emptyList(),
     val browseCategories: List<LiveCategory> = emptyList(),
     val categoryPreviews: List<LiveCategoryPreview> = emptyList(),
@@ -66,15 +69,19 @@ class DashboardViewModel(
     val uiState: StateFlow<IptvHomeUiState> = _uiState.asStateFlow()
 
     private var credentials: XtreamCredentials? = null
+    private var lastCredentials: XtreamCredentials? = null
 
     init {
         viewModelScope.launch {
             credentialsStore.credentialsFlow.collect { saved ->
-                credentials = saved
-                if (saved != null) {
-                    refresh(saved)
-                } else {
-                    _uiState.value = IptvHomeUiState(isLoadingCatalog = false)
+                if (saved != lastCredentials) {
+                    lastCredentials = saved
+                    credentials = saved
+                    if (saved != null) {
+                        refresh(saved)
+                    } else {
+                        _uiState.value = IptvHomeUiState(isLoadingCatalog = false)
+                    }
                 }
             }
         }
@@ -83,8 +90,7 @@ class DashboardViewModel(
                 credentialsStore.playlistsState,
                 watchHistory.entries,
                 favorites.items,
-                categoryVisibility.state,
-            ) { playlistsState, history, _, _ ->
+            ) { playlistsState, history, _ ->
                 Pair(playlistsState.activePlaylist?.name.orEmpty(), history)
             }.collect { (playlistName, history) ->
                 val local = buildLocalState(playlistName, history)
@@ -96,13 +102,34 @@ class DashboardViewModel(
                         recentMovies = local.recentMovies,
                         recentSeries = local.recentSeries,
                         favoriteChannels = local.favoriteChannels,
+                        continueWatching = local.continueWatching,
+                        heroEntry = local.heroEntry,
                     )
                 }
             }
         }
         viewModelScope.launch {
-            categoryVisibility.changes.collect {
-                credentials?.let(::refresh)
+            categoryVisibility.changes
+                .debounce(VISIBILITY_REFRESH_DEBOUNCE_MS)
+                .collect {
+                    credentials?.let(::refreshPreviewsOnly)
+                }
+        }
+    }
+
+    private fun refreshPreviewsOnly(creds: XtreamCredentials) {
+        viewModelScope.launch {
+            val categories = _uiState.value.browseCategories
+            if (categories.isEmpty()) {
+                refresh(creds)
+                return@launch
+            }
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    loadCategoryPreviews(creds, categories)
+                }
+            }.onSuccess { previews ->
+                _uiState.update { it.copy(categoryPreviews = previews) }
             }
         }
     }
@@ -146,6 +173,8 @@ class DashboardViewModel(
                     recentMovies = local.recentMovies,
                     recentSeries = local.recentSeries,
                     favoriteChannels = local.favoriteChannels,
+                    continueWatching = local.continueWatching,
+                    heroEntry = local.heroEntry,
                     categoryPreviews = emptyList(),
                 )
             }
@@ -154,6 +183,7 @@ class DashboardViewModel(
                 val fast = withContext(Dispatchers.IO) { loadLiveCatalog(creds) }
                 _uiState.update {
                     it.copy(
+                        isLoadingCatalog = false,
                         expiryLabel = fast.expiryLabel,
                         expiryUrgency = fast.expiryUrgency,
                         liveCategoryCount = fast.liveCategoryCount,
@@ -165,10 +195,7 @@ class DashboardViewModel(
                     loadCategoryPreviews(creds, fast.browseCategories)
                 }
                 _uiState.update {
-                    it.copy(
-                        isLoadingCatalog = false,
-                        categoryPreviews = previews,
-                    )
+                    it.copy(categoryPreviews = previews)
                 }
             } catch (error: XtreamApiException) {
                 _uiState.update {
@@ -186,11 +213,13 @@ class DashboardViewModel(
     }
 
     /** Μόνο auth + live categories — όχι full catalog index. */
-    private suspend fun loadLiveCatalog(credentials: XtreamCredentials): FastCatalogSnapshot {
-        val auth = api.authenticate(credentials)
-        repository.loadLiveCategories(credentials)
+    private suspend fun loadLiveCatalog(credentials: XtreamCredentials): FastCatalogSnapshot = coroutineScope {
+        val authDeferred = async { api.authenticate(credentials) }
+        val categoriesDeferred = async { repository.loadLiveCategories(credentials) }
+        val auth = authDeferred.await()
+        categoriesDeferred.await()
         val visibleLive = repository.visibleLiveCategories()
-        return FastCatalogSnapshot(
+        FastCatalogSnapshot(
             expiryLabel = formatExpiry(auth.expDate),
             expiryUrgency = expiryUrgency(auth.expDate),
             liveCategoryCount = visibleLive.size,
@@ -208,8 +237,7 @@ class DashboardViewModel(
             .map { category ->
                 async {
                     val channels = repository
-                        .loadLiveStreams(credentials, category.categoryId)
-                        .take(PREVIEW_CHANNEL_LIMIT)
+                        .peekLiveStreams(credentials, category.categoryId, PREVIEW_CHANNEL_LIMIT)
                     LiveCategoryPreview(
                         categoryId = category.categoryId,
                         categoryName = category.categoryName,
@@ -248,6 +276,12 @@ class DashboardViewModel(
             .distinctBy { it.seriesId ?: it.id }
             .take(RECENT_LIMIT)
 
+        val continueWatching = history
+            .filter { it.isInProgress && it.type != WatchType.LIVE }
+            .sortedByDescending { it.lastWatchedAt }
+            .take(RECENT_LIMIT)
+        val heroEntry = continueWatching.firstOrNull()
+
         return LocalSnapshot(
             playlistName = playlistName,
             quickPlayChannel = recent.firstOrNull() ?: favLive.firstOrNull(),
@@ -255,6 +289,8 @@ class DashboardViewModel(
             recentMovies = recentMovies,
             recentSeries = recentSeries,
             favoriteChannels = favLive,
+            continueWatching = continueWatching,
+            heroEntry = heroEntry,
         )
     }
 
@@ -272,6 +308,8 @@ class DashboardViewModel(
         val recentMovies: List<WatchEntry>,
         val recentSeries: List<WatchEntry>,
         val favoriteChannels: List<LiveStream>,
+        val continueWatching: List<WatchEntry>,
+        val heroEntry: WatchEntry?,
     )
 
     private fun formatExpiry(expDate: String?): String {
@@ -302,8 +340,9 @@ class DashboardViewModel(
     }
 
     companion object {
-        private const val PREVIEW_CATEGORY_LIMIT = 3
+        private const val PREVIEW_CATEGORY_LIMIT = 2
         private const val PREVIEW_CHANNEL_LIMIT = 12
         private const val RECENT_LIMIT = 12
+        private const val VISIBILITY_REFRESH_DEBOUNCE_MS = 800L
     }
 }

@@ -48,6 +48,8 @@ import com.apostolos.tv.ui.common.ErrorState
 import com.apostolos.tv.ui.common.LoadingScreenSkeleton
 import com.apostolos.tv.ui.common.SectionTitle
 import com.apostolos.tv.ui.common.focusScale
+import com.apostolos.tv.ui.common.rememberIsTvFormFactor
+import com.apostolos.tv.ui.common.tvClickable
 import com.apostolos.tv.ui.search.SearchSection
 import com.apostolos.tv.ui.theme.CinemaBlack
 import com.apostolos.tv.ui.theme.CinemaOnDarkMuted
@@ -65,6 +67,7 @@ fun SearchScreen(
     onSeriesClick: (SeriesItem) -> Unit,
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val isTv = rememberIsTvFormFactor()
 
     Scaffold(
         containerColor = CinemaBlack,
@@ -101,6 +104,13 @@ fun SearchScreen(
                 .fillMaxSize()
                 .padding(padding),
         ) {
+            SearchSectionChips(
+                selected = state.section,
+                onSelect = viewModel::setSection,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+            )
+
+            if (!isTv || state.query.isNotBlank()) {
             OutlinedTextField(
                 value = state.query,
                 onValueChange = viewModel::onQueryChange,
@@ -121,6 +131,7 @@ fun SearchScreen(
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                 keyboardActions = KeyboardActions(onSearch = { viewModel.search() }),
             )
+            }
 
             when {
                 state.isLoading -> LoadingScreenSkeleton(showChipRow = false)
@@ -193,6 +204,7 @@ fun SearchScreen(
                                 FilterChip(
                                     selected = false,
                                     onClick = { viewModel.searchRecent(query) },
+                                    modifier = Modifier.focusScale(focusedScale = 1.06f),
                                     label = { Text(query, maxLines = 1) },
                                     leadingIcon = {
                                         Icon(
@@ -208,16 +220,113 @@ fun SearchScreen(
                             }
                         }
                     }
+                    if (state.browsePreview.hasResults) {
+                        SearchResultsList(
+                            results = state.browsePreview,
+                            section = state.section,
+                            onLiveClick = onLiveClick,
+                            onMovieClick = onMovieClick,
+                            onSeriesClick = onSeriesClick,
+                            sectionPrefix = "Περιήγηση · ",
+                        )
+                    } else {
                     EmptyState(
                         message = if (state.recentQueries.isEmpty()) {
-                            "Πληκτρολόγησε για άμεση αναζήτηση."
+                            if (isTv) "Επίλεξε κατηγορία ή πρόσφατη αναζήτηση." else "Πληκτρολόγησε για άμεση αναζήτηση."
                         } else {
-                            "Επίλεξε πρόσφατη αναζήτηση ή πληκτρολόγησε."
+                            "Επίλεξε πρόσφατη αναζήτηση ή περιήγηση."
                         },
                         icon = Icons.Default.History,
+                        headline = if (isTv) "Αναζήτηση χωρίς πληκτρολόγιο" else null,
                         modifier = Modifier.fillMaxSize(),
                     )
+                    }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SearchSectionChips(
+    selected: SearchSection,
+    onSelect: (SearchSection) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val sections = listOf(
+        SearchSection.ALL to "Όλα",
+        SearchSection.LIVE to "Live",
+        SearchSection.MOVIES to "Ταινίες",
+        SearchSection.SERIES to "Σειρές",
+    )
+    LazyRow(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        items(sections.size) { index ->
+            val (section, label) = sections[index]
+            FilterChip(
+                selected = selected == section,
+                onClick = { onSelect(section) },
+                modifier = Modifier.focusScale(focusedScale = 1.06f),
+                label = { Text(label) },
+                colors = FilterChipDefaults.filterChipColors(
+                    containerColor = CinemaSurfaceHigh,
+                    selectedContainerColor = CinemaPrimary.copy(alpha = 0.25f),
+                ),
+            )
+        }
+    }
+}
+
+@Composable
+private fun SearchResultsList(
+    results: com.apostolos.tv.data.model.SearchResults,
+    section: SearchSection,
+    onLiveClick: (LiveStream) -> Unit,
+    onMovieClick: (VodStream) -> Unit,
+    onSeriesClick: (SeriesItem) -> Unit,
+    sectionPrefix: String = "",
+) {
+    LazyColumn(
+        contentPadding = PaddingValues(bottom = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        if (results.live.isNotEmpty() &&
+            (section == SearchSection.LIVE || section == SearchSection.ALL)
+        ) {
+            item { SectionTitle("${sectionPrefix}Live TV") }
+            items(results.live, key = { "live_${it.streamId}" }) { stream ->
+                SearchResultRow(
+                    title = stream.name,
+                    imageUrl = stream.streamIcon,
+                    isLandscape = true,
+                    onClick = { onLiveClick(stream) },
+                )
+            }
+        }
+        if (results.movies.isNotEmpty() &&
+            (section == SearchSection.MOVIES || section == SearchSection.ALL)
+        ) {
+            item { SectionTitle("${sectionPrefix}Ταινίες") }
+            items(results.movies, key = { "movie_${it.streamId}" }) { movie ->
+                SearchResultRow(
+                    title = movie.name,
+                    imageUrl = movie.streamIcon,
+                    onClick = { onMovieClick(movie) },
+                )
+            }
+        }
+        if (results.series.isNotEmpty() &&
+            (section == SearchSection.SERIES || section == SearchSection.ALL)
+        ) {
+            item { SectionTitle("${sectionPrefix}Σειρές") }
+            items(results.series, key = { "series_${it.seriesId}" }) { series ->
+                SearchResultRow(
+                    title = series.name,
+                    imageUrl = series.cover,
+                    onClick = { onSeriesClick(series) },
+                )
             }
         }
     }
@@ -234,7 +343,7 @@ private fun SearchResultRow(
         modifier = Modifier
             .fillMaxWidth()
             .focusScale()
-            .clickable(onClick = onClick),
+            .tvClickable(onClick = onClick),
         leadingContent = {
             CinemaAsyncImage(
                 model = imageUrl?.takeIf { it.isNotBlank() },

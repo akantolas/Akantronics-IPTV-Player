@@ -1,6 +1,7 @@
 package com.apostolos.tv.data
 
 import com.apostolos.tv.data.model.ContentSection
+import com.apostolos.tv.data.model.EpgListing
 import com.apostolos.tv.data.model.LiveCategory
 import com.apostolos.tv.data.model.LiveStream
 import com.apostolos.tv.data.model.SearchResults
@@ -26,6 +27,7 @@ class ContentRepository(
     private val liveStreamsCache = mutableMapOf<String, List<LiveStream>>()
     private val vodStreamsCache = mutableMapOf<String, List<VodStream>>()
     private val seriesCache = mutableMapOf<String, List<SeriesItem>>()
+    private val epgCache = mutableMapOf<Int, List<EpgListing>>()
 
     suspend fun loadLiveCategories(credentials: XtreamCredentials): List<LiveCategory> {
         if (liveCategoriesAll.isNotEmpty() && cachedCredentials == credentials) {
@@ -63,6 +65,19 @@ class ContentRepository(
             api.getLiveStreams(credentials, key)
                 .sortedBy { stream -> stream.name.lowercase() }
         }
+    }
+
+    /** Γρήγορη προεπισκόπηση — χωρίς sort/cache ολόκληρης λίστας. */
+    suspend fun peekLiveStreams(
+        credentials: XtreamCredentials,
+        categoryId: String,
+        limit: Int,
+    ): List<LiveStream> {
+        val key = normalizeCategoryId(categoryId)
+        liveStreamsCache[key]?.let { cached ->
+            return cached.take(limit)
+        }
+        return api.getLiveStreams(credentials, key).take(limit)
     }
 
     suspend fun loadVodStreams(
@@ -242,6 +257,21 @@ class ContentRepository(
         vodId: Int,
     ): VodInfoResponse = api.getVodInfo(credentials, vodId)
 
+    suspend fun loadLiveEpg(
+        credentials: XtreamCredentials,
+        streamId: Int,
+        limit: Int = 4,
+    ): List<EpgListing> {
+        epgCache[streamId]?.let { return it }
+        return api.getShortEpg(credentials, streamId, limit).also { listings ->
+            epgCache[streamId] = listings
+        }
+    }
+
+    fun clearEpgCache() {
+        epgCache.clear()
+    }
+
     fun clearCache() {
         cachedCredentials = null
         liveCategoriesAll = emptyList()
@@ -250,6 +280,7 @@ class ContentRepository(
         liveStreamsCache.clear()
         vodStreamsCache.clear()
         seriesCache.clear()
+        epgCache.clear()
     }
 
     companion object {

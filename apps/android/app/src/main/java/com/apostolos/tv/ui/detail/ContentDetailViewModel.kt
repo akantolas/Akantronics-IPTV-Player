@@ -7,6 +7,7 @@ import com.apostolos.tv.data.CredentialsStore
 import com.apostolos.tv.data.FavoritesStore
 import com.apostolos.tv.data.WatchHistoryStore
 import com.apostolos.tv.data.XtreamApiException
+import com.apostolos.tv.data.model.EpgProgramme
 import com.apostolos.tv.data.model.FavoriteItem
 import com.apostolos.tv.data.model.LiveStream
 import com.apostolos.tv.data.model.SeriesEpisode
@@ -15,6 +16,7 @@ import com.apostolos.tv.data.model.SeriesItem
 import com.apostolos.tv.data.model.VodStream
 import com.apostolos.tv.data.model.WatchEntry
 import com.apostolos.tv.data.model.XtreamCredentials
+import com.apostolos.tv.data.model.toNowNext
 import com.apostolos.tv.ui.player.ExternalSubtitleSource
 import com.apostolos.tv.ui.player.PlayerViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -47,6 +49,9 @@ data class DetailUiState(
     val resumePositionMs: Long = 0L,
     val hasResume: Boolean = false,
     val isFavorite: Boolean = false,
+    val nowProgramme: EpgProgramme? = null,
+    val nextProgramme: EpgProgramme? = null,
+    val isLoadingEpg: Boolean = false,
 )
 
 class ContentDetailViewModel(
@@ -60,6 +65,7 @@ class ContentDetailViewModel(
 
     private var credentials: XtreamCredentials? = null
     private var liveStream: LiveStream? = null
+    private var liveZapChannels: List<LiveStream> = emptyList()
     private var movie: VodStream? = null
     private var series: SeriesItem? = null
     private var episode: SeriesEpisode? = null
@@ -74,8 +80,9 @@ class ContentDetailViewModel(
         }
     }
 
-    fun openLive(stream: LiveStream) {
+    fun openLive(stream: LiveStream, zapChannels: List<LiveStream> = emptyList()) {
         liveStream = stream
+        liveZapChannels = zapChannels.ifEmpty { listOf(stream) }.distinctBy { it.streamId }
         movie = null
         series = null
         episode = null
@@ -90,7 +97,34 @@ class ContentDetailViewModel(
             imageUrl = stream.streamIcon,
             categoryLabel = category,
             isFavorite = favorites.isFavorite(FavoriteItem.liveId(stream.streamId)),
+            isLoadingEpg = true,
         )
+        loadLiveEpg(stream.streamId)
+    }
+
+    private fun loadLiveEpg(streamId: Int) {
+        val creds = credentials ?: run {
+            _uiState.update { it.copy(isLoadingEpg = false) }
+            return
+        }
+        viewModelScope.launch {
+            runCatching {
+                repository.loadLiveEpg(creds, streamId)
+            }.onSuccess { listings ->
+                val (now, next) = listings.toNowNext()
+                _uiState.update {
+                    it.copy(
+                        isLoadingEpg = false,
+                        nowProgramme = now,
+                        nextProgramme = next,
+                    )
+                }
+            }.onFailure {
+                _uiState.update {
+                    it.copy(isLoadingEpg = false, nowProgramme = null, nextProgramme = null)
+                }
+            }
+        }
     }
 
     fun openMovie(movie: VodStream) {
@@ -225,7 +259,7 @@ class ContentDetailViewModel(
         return when (_uiState.value.kind) {
             DetailKind.LIVE -> {
                 val stream = liveStream ?: return false
-                playerViewModel.playLive(creds, stream)
+                playerViewModel.playLive(creds, stream, liveZapChannels)
                 true
             }
             DetailKind.MOVIE -> {
@@ -263,6 +297,7 @@ class ContentDetailViewModel(
 
     fun clear() {
         liveStream = null
+        liveZapChannels = emptyList()
         movie = null
         series = null
         episode = null

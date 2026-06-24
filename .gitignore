@@ -24,3 +24,4 @@ apps/android-tv/**/*.aab
 # OS
 .DS_Store
 Thumbs.db
+/.metadata/

@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<widget xmlns="http://www.w3.org/ns/widgets"
+    xmlns:tizen="http://tizen.org/ns/widgets"
+    id="http://akantolas.com/AkantronicsIPTV"
+    version="0.1.0"
+    viewmodes="maximized">
+    <tizen:application id="akantiptv1.AkantronicsIPTV" package="akantiptv1" required_version="2.3" />
+    <content src="index.html" />
+    <feature name="http://tizen.org/feature/screen.size.all" />
+    <feature name="http://tizen.org/feature/network.internet" />
+    <icon src="icon.png" />
+    <name>Akantronics IPTV</name>
+    <description>Samsung Smart TV IPTV player</description>
+    <author href="https://github.com/akantolas" email="dev@akantolas.com">Akantronics</author>
+    <tizen:profile name="tv" />
+    <tizen:setting screen-orientation="landscape" context-menu="enable" background-support="disable" encryption="disable" install-location="auto" hwkey-event="enable" />
+    <tizen:privilege name="http://tizen.org/privilege/internet" />
+    <tizen:privilege name="http://tizen.org/privilege/tv.inputdevice" />
+    <tizen:privilege name="http://developer.samsung.com/privilege/avplay" />
+    <access origin="*" subdomains="true" />
+    <tizen:content-security-policy>default-src * 'unsafe-inline' 'unsafe-eval' data: blob:; connect-src *; img-src * data: blob:; media-src * blob:;</tizen:content-security-policy>
+</widget>

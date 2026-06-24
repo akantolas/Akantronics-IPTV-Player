@@ -2,12 +2,13 @@ package com.apostolos.tv.ui.common
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -30,6 +31,7 @@ fun PosterCard(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     subtitle: String? = null,
+    progressFraction: Float? = null,
     isFavorite: Boolean = false,
     onToggleFavorite: (() -> Unit)? = null,
 ) {
@@ -45,8 +47,8 @@ fun PosterCard(
                 color = if (selected) CinemaPrimary.copy(alpha = 0.5f) else CinemaSurfaceBorder.copy(alpha = 0f),
                 shape = shape,
             )
-            .clickable(onClick = onClick)
             .focusScale()
+            .tvClickable(onClick = onClick)
             .padding(8.dp),
     ) {
         Box {
@@ -65,6 +67,17 @@ fun PosterCard(
                     modifier = Modifier.align(Alignment.TopEnd),
                 )
             }
+        }
+        progressFraction?.takeIf { it in 0.01f..0.99f }?.let { fraction ->
+            LinearProgressIndicator(
+                progress = { fraction },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 8.dp)
+                    .height(3.dp)
+                    .clip(RoundedCornerShape(2.dp)),
+                color = CinemaPrimary,
+            )
         }
         Text(
             text = title,

@@ -38,6 +38,7 @@ import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.WifiTethering
@@ -118,6 +119,11 @@ fun SettingsScreen(
     onLogout: () -> Unit,
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+
+    LaunchedEffect(Unit) {
+        viewModel.ensureLoaded()
+    }
+
     val snackbarHostState = remember { SnackbarHostState() }
     var snackbarIsError by remember { mutableStateOf(false) }
     var page by remember { mutableStateOf(SettingsPage.Main) }
@@ -338,6 +344,7 @@ private fun SettingsMainContent(
                 totalSeries = state.seriesCategories.size,
                 onOpenCategories = onOpenCategories,
                 onClearCache = viewModel::clearContentCache,
+                onReloadProgramGuide = viewModel::reloadProgramGuide,
             )
         }
 
@@ -867,6 +874,7 @@ private fun ContentSettingsSection(
     totalSeries: Int,
     onOpenCategories: () -> Unit,
     onClearCache: () -> Unit,
+    onReloadProgramGuide: () -> Unit,
 ) {
     Card(
         modifier = Modifier
@@ -880,6 +888,13 @@ private fun ContentSettingsSection(
                 title = "Κατηγορίες περιεχομένου",
                 subtitle = "Live $visibleLive/$totalLive · Ταινίες $visibleMovies/$totalMovies · Σειρές $visibleSeries/$totalSeries",
                 onClick = onOpenCategories,
+            )
+            HorizontalDivider(color = CinemaSurfaceBorder.copy(alpha = 0.5f))
+            SettingsNavRow(
+                icon = { Icon(Icons.Default.Schedule, contentDescription = null, tint = CinemaPrimary) },
+                title = "Ανανέωση προγράμματος",
+                subtitle = "Επαναφόρτωση EPG (Τώρα / Επόμενο) για live κανάλια",
+                onClick = onReloadProgramGuide,
             )
             HorizontalDivider(color = CinemaSurfaceBorder.copy(alpha = 0.5f))
             SettingsNavRow(

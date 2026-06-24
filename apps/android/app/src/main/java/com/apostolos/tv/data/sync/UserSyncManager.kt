@@ -175,6 +175,6 @@ class UserSyncManager(
     }
 
     companion object {
-        private const val PUSH_DEBOUNCE_MS = 800L
+        private const val PUSH_DEBOUNCE_MS = 2_500L
     }
 }

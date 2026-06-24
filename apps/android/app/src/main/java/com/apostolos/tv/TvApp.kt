@@ -1,12 +1,25 @@
 package com.apostolos.tv
 
 import android.app.Application
+import coil.Coil
+import coil.ImageLoader
+import coil.disk.DiskCache
+import coil.memory.MemoryCache
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import com.apostolos.tv.ui.common.SplashScreen
+import com.apostolos.tv.ui.common.rememberIsTvFormFactor
+import kotlinx.coroutines.delay
+import androidx.compose.ui.platform.LocalView
 import com.apostolos.tv.data.CategoryVisibilityStore
 import com.apostolos.tv.data.ContentRepository
 import com.apostolos.tv.data.CredentialsStore
@@ -30,10 +43,12 @@ import com.apostolos.tv.ui.search.SearchViewModel
 import com.apostolos.tv.ui.series.SeriesViewModel
 import com.apostolos.tv.ui.settings.SettingsViewModel
 import com.apostolos.tv.ui.theme.TvTheme
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 private object Routes {
-    const val Login = "login"
-    const val Home = "home"
+    const val Login = SessionBootstrap.Routes.Login
+    const val Home = SessionBootstrap.Routes.Home
 }
 
 class TvApplication : Application() {
@@ -63,19 +78,46 @@ class TvApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        Coil.setImageLoader(createImageLoader())
         userSyncManager.startAutoSync()
     }
+
+    private fun createImageLoader(): ImageLoader =
+        ImageLoader.Builder(this)
+            .crossfade(false)
+            .memoryCache {
+                MemoryCache.Builder(this)
+                    .maxSizePercent(0.12)
+                    .build()
+            }
+            .diskCache {
+                DiskCache.Builder()
+                    .directory(cacheDir.resolve("image_cache"))
+                    .maxSizePercent(0.03)
+                    .build()
+            }
+            .build()
 }
 
 @Composable
 fun TvApp(application: Application) {
     val app = application as TvApplication
     val navController = rememberNavController()
+    var showSplash by remember { mutableStateOf(true) }
+
+    LaunchedEffect(Unit) {
+        delay(SPLASH_DURATION_MS)
+        showSplash = false
+    }
 
     TvTheme {
+        TvSoundEffectsHost()
+        if (showSplash) {
+            SplashScreen()
+        } else {
         NavHost(
             navController = navController,
-            startDestination = Routes.Login,
+            startDestination = SessionBootstrap.initialRoute(app),
         ) {
             composable(Routes.Login) {
                 val loginViewModel: LoginViewModel = viewModel(
@@ -100,10 +142,17 @@ fun TvApp(application: Application) {
                 )
             }
             composable(Routes.Home) {
+                LaunchedEffect(Unit) {
+                    if (app.accountSessionStore.session.value != null) {
+                        withContext(Dispatchers.IO) {
+                            runCatching { app.userSyncManager.pullFromCloud() }
+                        }
+                    }
+                }
                 val playerViewModel: PlayerViewModel = viewModel(
                     factory = remember(app) {
                         SimpleViewModelFactory {
-                            PlayerViewModel(app.watchHistoryStore)
+                            PlayerViewModel(app.watchHistoryStore, app.contentRepository)
                         }
                     },
                 )
@@ -217,6 +266,20 @@ fun TvApp(application: Application) {
                     },
                 )
             }
+        }
+        }
+    }
+}
+
+private const val SPLASH_DURATION_MS = 900L
+
+@Composable
+private fun TvSoundEffectsHost() {
+    val view = LocalView.current
+    if (rememberIsTvFormFactor()) {
+        DisposableEffect(view) {
+            view.isSoundEffectsEnabled = true
+            onDispose {}
         }
     }
 }

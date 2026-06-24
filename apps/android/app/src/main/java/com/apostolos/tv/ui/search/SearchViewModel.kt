@@ -27,6 +27,7 @@ data class SearchUiState(
     val recentQueries: List<String> = emptyList(),
     val scopeTitle: String = SearchContext.Default.scopeTitle,
     val section: SearchSection = SearchSection.ALL,
+    val browsePreview: SearchResults = SearchResults.Empty,
 )
 
 class SearchViewModel(
@@ -66,8 +67,34 @@ class SearchViewModel(
                 errorMessage = null,
                 scopeTitle = context.scopeTitle,
                 section = context.section,
+                browsePreview = buildBrowsePreview(context),
             )
         }
+    }
+
+    fun setSection(section: SearchSection) {
+        if (context.section == section && _uiState.value.section == section) return
+        context = context.copy(section = section)
+        searchJob?.cancel()
+        _uiState.update {
+            it.copy(
+                section = section,
+                results = SearchResults.Empty,
+                hasSearched = false,
+                errorMessage = null,
+                browsePreview = buildBrowsePreview(context),
+            )
+        }
+        val query = _uiState.value.query.trim()
+        if (query.isNotBlank()) {
+            searchJob = viewModelScope.launch { search() }
+        }
+    }
+
+    fun quickPickSearch(term: String) {
+        _uiState.update { it.copy(query = term, errorMessage = null) }
+        searchJob?.cancel()
+        searchJob = viewModelScope.launch { search() }
     }
 
     fun onQueryChange(value: String) {
@@ -227,5 +254,24 @@ class SearchViewModel(
             movies = merged.movies.take(40),
             series = merged.series.take(40),
         )
+    }
+
+    private fun buildBrowsePreview(context: SearchContext): SearchResults {
+        val live = if (context.section == SearchSection.LIVE || context.section == SearchSection.ALL) {
+            context.preloadedLive.take(12)
+        } else {
+            emptyList()
+        }
+        val movies = if (context.section == SearchSection.MOVIES || context.section == SearchSection.ALL) {
+            context.preloadedMovies.take(12)
+        } else {
+            emptyList()
+        }
+        val series = if (context.section == SearchSection.SERIES || context.section == SearchSection.ALL) {
+            context.preloadedSeries.take(12)
+        } else {
+            emptyList()
+        }
+        return filterResultsForSection(SearchResults(live = live, movies = movies, series = series))
     }
 }

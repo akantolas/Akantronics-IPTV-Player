@@ -36,11 +36,12 @@ export class XtreamClient {
   async authenticate(): Promise<XtreamUserInfo> {
     const url = buildPlayerApiUrl(this.credentials);
     const response = await this.request(url);
-    const data = (await response.json()) as XtreamUserInfo;
-    if (data.auth === 0) {
+    const data = (await response.json()) as XtreamUserInfo & { user_info?: XtreamUserInfo };
+    const userInfo = data.user_info ?? data;
+    if (userInfo.auth === 0) {
       throw new XtreamError("Invalid username or password.");
     }
-    return data;
+    return userInfo;
   }
 
   async getLiveCategories(): Promise<LiveCategory[]> {

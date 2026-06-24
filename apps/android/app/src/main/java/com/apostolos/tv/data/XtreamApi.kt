@@ -1,7 +1,9 @@
 package com.apostolos.tv.data
 
+import com.apostolos.tv.data.model.EpgListing
 import com.apostolos.tv.data.model.LiveCategory
 import com.apostolos.tv.data.model.LiveStream
+import com.apostolos.tv.data.model.ShortEpgResponse
 import com.apostolos.tv.data.model.SeriesCategory
 import com.apostolos.tv.data.model.SeriesInfoResponse
 import com.apostolos.tv.data.model.SeriesItem
@@ -25,13 +27,21 @@ class XtreamApi(
     private val client: OkHttpClient = defaultClient,
     private val json: Json = Json { ignoreUnknownKeys = true },
 ) {
+    private var cachedAuthCredentials: XtreamCredentials? = null
+    private var cachedAuthInfo: XtreamUserInfo? = null
+
     suspend fun authenticate(credentials: XtreamCredentials): XtreamUserInfo =
         withContext(Dispatchers.IO) {
+            if (cachedAuthCredentials == credentials && cachedAuthInfo != null) {
+                return@withContext cachedAuthInfo!!
+            }
             val url = XtreamUrls.buildPlayerApiUrl(credentials)
             val info = parseUserInfo(getJsonBody(url))
             if (info.auth == 0) {
                 throw XtreamApiException("Invalid username or password.")
             }
+            cachedAuthCredentials = credentials
+            cachedAuthInfo = info
             info
         }
 
@@ -93,6 +103,39 @@ class XtreamApi(
             "get_vod_info",
             mapOf("vod_id" to vodId.toString()),
         )
+
+    suspend fun getShortEpg(
+        credentials: XtreamCredentials,
+        streamId: Int,
+        limit: Int = 4,
+    ): List<EpgListing> = withContext(Dispatchers.IO) {
+        runCatching {
+            val response: ShortEpgResponse = fetchAction(
+                credentials,
+                "get_short_epg",
+                mapOf(
+                    "stream_id" to streamId.toString(),
+                    "limit" to limit.toString(),
+                ),
+            )
+            response.listings
+        }.getOrElse {
+            runCatching {
+                json.decodeFromString<List<EpgListing>>(
+                    getJsonBody(
+                        XtreamUrls.buildPlayerApiUrl(
+                            credentials,
+                            "get_short_epg",
+                            mapOf(
+                                "stream_id" to streamId.toString(),
+                                "limit" to limit.toString(),
+                            ),
+                        ),
+                    ),
+                )
+            }.getOrDefault(emptyList())
+        }
+    }
 
     private suspend inline fun <reified T> fetchAction(
         credentials: XtreamCredentials,

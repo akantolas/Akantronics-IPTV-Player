@@ -2,6 +2,7 @@ export { XtreamClient, XtreamError } from "./client.js";
 export {
   buildPlayerApiUrl,
   buildStreamUrl,
+  buildXmltvUrl,
   normalizeServerUrl,
   validateCredentials,
 } from "./urls.js";

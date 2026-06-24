@@ -27,7 +27,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 data class MoviesUiState(
-    val isLoadingCategories: Boolean = true,
+    val isLoadingCategories: Boolean = false,
     val isLoadingMovies: Boolean = false,
     val errorMessage: String? = null,
     val categories: List<VodCategory> = emptyList(),
@@ -51,22 +51,34 @@ class MoviesViewModel(
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     private var credentials: XtreamCredentials? = null
+    private var catalogLoaded = false
+    private var lastCredentials: XtreamCredentials? = null
 
     init {
         viewModelScope.launch {
             credentialsStore.credentialsFlow.collect { saved ->
-                if (saved != null) {
+                if (saved != lastCredentials) {
+                    lastCredentials = saved
                     credentials = saved
-                    loadCategories()
+                    catalogLoaded = false
+                    if (saved == null) {
+                        _uiState.value = MoviesUiState()
+                    } else {
+                        _uiState.update {
+                            it.copy(
+                                categories = emptyList(),
+                                movies = emptyList(),
+                                selectedCategoryId = null,
+                                errorMessage = null,
+                            )
+                        }
+                    }
                 }
             }
         }
         viewModelScope.launch {
-            categoryVisibility.state.collect { applyCategoryFilter(reloadContent = true) }
-        }
-        viewModelScope.launch {
             categoryVisibility.changes.collect { section ->
-                if (section == ContentSection.MOVIES) {
+                if (section == ContentSection.MOVIES && catalogLoaded) {
                     applyCategoryFilter(reloadContent = true)
                 }
             }
@@ -76,13 +88,21 @@ class MoviesViewModel(
         }
     }
 
+    fun ensureLoaded() {
+        if (!catalogLoaded && credentials != null) {
+            loadCategories()
+        }
+    }
+
     fun currentCredentials(): XtreamCredentials? = credentials
 
     fun reload() {
+        catalogLoaded = false
         loadCategories()
     }
 
     fun selectCategory(categoryId: String) {
+        ensureLoaded()
         val creds = credentials ?: return
         val normalizedId = normalizeCategoryId(categoryId)
         if (normalizeCategoryId(_uiState.value.selectedCategoryId.orEmpty()) == normalizedId) return
@@ -139,6 +159,7 @@ class MoviesViewModel(
             _uiState.update { it.copy(isLoadingCategories = true, errorMessage = null) }
             try {
                 repository.loadVodCategories(creds)
+                catalogLoaded = true
                 _uiState.update { it.copy(isLoadingCategories = false) }
                 applyCategoryFilter(reloadContent = true)
             } catch (error: XtreamApiException) {

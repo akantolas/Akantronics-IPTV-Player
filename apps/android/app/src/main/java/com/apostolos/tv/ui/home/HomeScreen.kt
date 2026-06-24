@@ -33,6 +33,8 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.NavHost
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -104,9 +106,6 @@ fun HomeScreen(
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route ?: HomeTab.Dashboard.route
     val credentials by credentialsStore.credentialsFlow.collectAsStateWithLifecycle()
-    val liveState by liveViewModel.uiState.collectAsStateWithLifecycle()
-    val moviesState by moviesViewModel.uiState.collectAsStateWithLifecycle()
-    val seriesState by seriesViewModel.uiState.collectAsStateWithLifecycle()
 
     LaunchedEffect(credentials) {
         credentials?.let(playerViewModel::setCredentials)
@@ -128,7 +127,14 @@ fun HomeScreen(
     }
 
     fun openSearch() {
-        searchViewModel.setContext(buildSearchContext(currentRoute, liveState, moviesState, seriesState))
+        searchViewModel.setContext(
+            buildSearchContext(
+                currentRoute,
+                liveViewModel.uiState.value,
+                moviesViewModel.uiState.value,
+                seriesViewModel.uiState.value,
+            ),
+        )
         navController.navigate(HomeRoutes.Search)
     }
 
@@ -159,6 +165,7 @@ fun HomeScreen(
             openPlayer = ::openPlayer,
             openDetail = ::openDetail,
             navigateToTab = ::navigateToTab,
+            isTv = isTv,
         )
     }
 
@@ -288,7 +295,19 @@ private fun HomeNavGraph(
     openPlayer: () -> Unit,
     openDetail: () -> Unit,
     navigateToTab: (HomeTab) -> Unit,
+    isTv: Boolean,
 ) {
+    val tabEnterTransition: EnterTransition = if (isTv) {
+        EnterTransition.None
+    } else {
+        fadeIn(tween(280)) + slideInHorizontally(tween(280)) { it / 5 }
+    }
+    val tabExitTransition: ExitTransition = if (isTv) {
+        ExitTransition.None
+    } else {
+        fadeOut(tween(280)) + slideOutHorizontally(tween(280)) { -it / 5 }
+    }
+
     NavHost(
         navController = navController,
         startDestination = HomeTab.Dashboard.route,
@@ -296,17 +315,13 @@ private fun HomeNavGraph(
     ) {
             composable(
                 route = HomeTab.Dashboard.route,
-                enterTransition = {
-                    fadeIn(tween(280)) + slideInHorizontally(tween(280)) { it / 5 }
-                },
-                exitTransition = {
-                    fadeOut(tween(280)) + slideOutHorizontally(tween(280)) { -it / 5 }
-                },
+                enterTransition = { tabEnterTransition },
+                exitTransition = { tabExitTransition },
             ) {
                 DashboardScreen(
                     viewModel = dashboardViewModel,
-                    onLiveClick = { stream ->
-                        detailViewModel.openLive(stream)
+                    onLiveClick = { stream, zapChannels ->
+                        detailViewModel.openLive(stream, zapChannels)
                         openDetail()
                     },
                     onWatchEntry = { entry ->
@@ -323,7 +338,10 @@ private fun HomeNavGraph(
                             }
                             WatchType.LIVE -> {
                                 dashboardViewModel.liveFromEntry(entry)?.let { stream ->
-                                    detailViewModel.openLive(stream)
+                                    detailViewModel.openLive(
+                                        stream,
+                                        dashboardViewModel.uiState.value.recentChannels,
+                                    )
                                     openDetail()
                                 }
                             }
@@ -340,31 +358,24 @@ private fun HomeNavGraph(
             }
             composable(
                 route = HomeTab.Live.route,
-                enterTransition = {
-                    fadeIn(tween(280)) + slideInHorizontally(tween(280)) { it / 5 }
-                },
-                exitTransition = {
-                    fadeOut(tween(280)) + slideOutHorizontally(tween(280)) { -it / 5 }
-                },
+                enterTransition = { tabEnterTransition },
+                exitTransition = { tabExitTransition },
             ) {
+                val liveState by liveViewModel.uiState.collectAsStateWithLifecycle()
                 LiveScreen(
                     viewModel = liveViewModel,
                     playerViewModel = playerViewModel,
                     categoryVisibility = categoryVisibilityStore,
                     onOpenDetail = { stream ->
-                        detailViewModel.openLive(stream)
+                        detailViewModel.openLive(stream, liveState.streams)
                         openDetail()
                     },
                 )
             }
             composable(
                 route = HomeTab.Movies.route,
-                enterTransition = {
-                    fadeIn(tween(280)) + slideInHorizontally(tween(280)) { it / 5 }
-                },
-                exitTransition = {
-                    fadeOut(tween(280)) + slideOutHorizontally(tween(280)) { -it / 5 }
-                },
+                enterTransition = { tabEnterTransition },
+                exitTransition = { tabExitTransition },
             ) {
                 MoviesScreen(
                     viewModel = moviesViewModel,
@@ -378,12 +389,8 @@ private fun HomeNavGraph(
             }
             composable(
                 route = HomeTab.Series.route,
-                enterTransition = {
-                    fadeIn(tween(280)) + slideInHorizontally(tween(280)) { it / 5 }
-                },
-                exitTransition = {
-                    fadeOut(tween(280)) + slideOutHorizontally(tween(280)) { -it / 5 }
-                },
+                enterTransition = { tabEnterTransition },
+                exitTransition = { tabExitTransition },
             ) {
                 SeriesScreen(
                     viewModel = seriesViewModel,
@@ -427,7 +434,7 @@ private fun HomeNavGraph(
                     viewModel = searchViewModel,
                     onBack = { navController.popBackStack() },
                     onLiveClick = { stream ->
-                        detailViewModel.openLive(stream)
+                        detailViewModel.openLive(stream, listOf(stream))
                         openDetail()
                     },
                     onMovieClick = { movie ->

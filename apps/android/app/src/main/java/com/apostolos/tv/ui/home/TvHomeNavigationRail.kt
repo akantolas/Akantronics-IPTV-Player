@@ -26,6 +26,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.apostolos.tv.ui.common.BrandWordmark
 import com.apostolos.tv.ui.common.focusScale
+import com.apostolos.tv.ui.common.rememberTvClickHandler
 import com.apostolos.tv.ui.theme.CinemaPrimary
 import com.apostolos.tv.ui.theme.CinemaSurface
 
@@ -57,10 +58,11 @@ fun TvHomeNavigationRail(
 
             HomeTab.entries.forEach { tab ->
                 val selected = currentRoute == tab.route
+                val onTabClick = rememberTvClickHandler { onNavigate(tab) }
                 NavigationRailItem(
                     modifier = Modifier.focusScale(focusedScale = 1.08f),
                     selected = selected,
-                    onClick = { onNavigate(tab) },
+                    onClick = onTabClick,
                     icon = {
                         Icon(
                             imageVector = when (tab) {
@@ -91,10 +93,11 @@ fun TvHomeNavigationRail(
             Spacer(modifier = Modifier.weight(1f))
 
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                val onSearchClick = rememberTvClickHandler(onSearch)
                 NavigationRailItem(
                     modifier = Modifier.focusScale(focusedScale = 1.08f),
                     selected = false,
-                    onClick = onSearch,
+                    onClick = onSearchClick,
                     icon = {
                         Icon(
                             imageVector = Icons.Default.Search,
@@ -107,10 +110,11 @@ fun TvHomeNavigationRail(
                         unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
                     ),
                 )
+                val onSettingsClick = rememberTvClickHandler(onSettings)
                 NavigationRailItem(
                     modifier = Modifier.focusScale(focusedScale = 1.08f),
                     selected = false,
-                    onClick = onSettings,
+                    onClick = onSettingsClick,
                     icon = {
                         Icon(
                             imageVector = Icons.Default.Settings,

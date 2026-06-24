@@ -46,11 +46,13 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.apostolos.tv.ui.common.EpgNowNextSection
 import com.apostolos.tv.ui.common.CinemaAsyncImage
 import com.apostolos.tv.ui.common.ErrorState
 import com.apostolos.tv.ui.common.FavoriteButton
 import com.apostolos.tv.ui.common.LoadingScreenSkeleton
 import com.apostolos.tv.ui.common.focusScale
+import com.apostolos.tv.ui.common.rememberTvClickHandler
 import com.apostolos.tv.ui.theme.CinemaBlack
 import com.apostolos.tv.ui.theme.CinemaDimens
 import com.apostolos.tv.ui.theme.CinemaOnDarkMuted
@@ -66,6 +68,14 @@ fun DetailScreen(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     var showResumeDialog by remember { mutableStateOf(false) }
+    val onPlayClick = rememberTvClickHandler {
+        if (state.hasResume) {
+            showResumeDialog = true
+        } else {
+            onPlay(false)
+        }
+    }
+    val onBackClick = rememberTvClickHandler(onBack)
 
     if (showResumeDialog && state.hasResume) {
         AlertDialog(
@@ -148,6 +158,21 @@ fun DetailScreen(
                                 )
                             }
 
+                            if (state.kind == DetailKind.LIVE) {
+                                if (state.isLoadingEpg) {
+                                    Text(
+                                        text = "Φόρτωση EPG…",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = CinemaOnDarkMuted,
+                                    )
+                                } else {
+                                    EpgNowNextSection(
+                                        now = state.nowProgramme,
+                                        next = state.nextProgramme,
+                                    )
+                                }
+                            }
+
                             val chips = buildList {
                                 state.categoryLabel?.let { add(it) }
                                 state.rating?.let { add("★ $it") }
@@ -169,13 +194,7 @@ fun DetailScreen(
                                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                             ) {
                                 Button(
-                                    onClick = {
-                                        if (state.hasResume) {
-                                            showResumeDialog = true
-                                        } else {
-                                            onPlay(false)
-                                        }
-                                    },
+                                    onClick = onPlayClick,
                                     modifier = Modifier
                                         .weight(1f)
                                         .focusScale(),
@@ -196,7 +215,7 @@ fun DetailScreen(
                                     )
                                 }
                                 OutlinedButton(
-                                    onClick = onBack,
+                                    onClick = onBackClick,
                                     modifier = Modifier
                                         .weight(0.55f)
                                         .focusScale(),

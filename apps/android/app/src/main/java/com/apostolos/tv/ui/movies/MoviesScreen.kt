@@ -15,6 +15,7 @@ import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -32,6 +33,7 @@ import com.apostolos.tv.ui.common.EmptyState
 import com.apostolos.tv.ui.common.ErrorState
 import com.apostolos.tv.ui.common.LoadingScreenSkeleton
 import com.apostolos.tv.ui.common.PosterCard
+import com.apostolos.tv.ui.common.rememberIsTvFormFactor
 import com.apostolos.tv.ui.common.RecentlyViewedSection
 import com.apostolos.tv.ui.common.SkeletonPosterGrid
 import com.apostolos.tv.ui.player.PlayerViewModel
@@ -48,14 +50,18 @@ fun MoviesScreen(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val playerState by playerViewModel.uiState.collectAsStateWithLifecycle()
-    categoryVisibility.state.collectAsStateWithLifecycle()
     val recentMovies by viewModel.recentlyViewed.collectAsStateWithLifecycle()
+
+    LaunchedEffect(Unit) {
+        viewModel.ensureLoaded()
+    }
 
     val visibleCategories = state.categories.filter { category ->
         categoryVisibility.isVisible(ContentSection.MOVIES, category.categoryId) ||
             category.categoryId == ContentRepository.FAVORITES_CATEGORY_ID
     }
     val selectedCategoryId = state.selectedCategoryId?.let(::normalizeCategoryId)
+    val isTv = rememberIsTvFormFactor()
 
     Column(modifier = Modifier.fillMaxSize()) {
         when {
@@ -123,7 +129,7 @@ fun MoviesScreen(
                     )
                 } else {
                     LazyVerticalGrid(
-                        columns = GridCells.Fixed(2),
+                        columns = if (isTv) GridCells.Adaptive(160.dp) else GridCells.Fixed(2),
                         contentPadding = PaddingValues(CinemaDimens.screenPadding),
                         horizontalArrangement = Arrangement.spacedBy(CinemaDimens.cardSpacing),
                         verticalArrangement = Arrangement.spacedBy(CinemaDimens.cardSpacing),

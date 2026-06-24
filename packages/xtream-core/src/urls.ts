@@ -39,6 +39,14 @@ export function buildStreamUrl(
   return `${base}/${segment}/${encodeURIComponent(credentials.username)}/${encodeURIComponent(credentials.password)}/${streamId}.${ext}`;
 }
 
+export function buildXmltvUrl(credentials: XtreamCredentials): string {
+  const base = normalizeServerUrl(credentials.serverUrl);
+  const url = new URL(`${base}/xmltv.php`);
+  url.searchParams.set("username", credentials.username);
+  url.searchParams.set("password", credentials.password);
+  return url.toString();
+}
+
 export function validateCredentials(credentials: XtreamCredentials): string[] {
   const errors: string[] = [];
   if (!credentials.serverUrl.trim()) errors.push("Server URL is required.");

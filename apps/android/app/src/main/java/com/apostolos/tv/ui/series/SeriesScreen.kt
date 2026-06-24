@@ -50,7 +50,9 @@ import com.apostolos.tv.data.model.normalizeCategoryId
 import com.apostolos.tv.ui.common.ErrorState
 import com.apostolos.tv.ui.common.LoadingScreenSkeleton
 import com.apostolos.tv.ui.common.PosterCard
+import com.apostolos.tv.ui.common.rememberIsTvFormFactor
 import com.apostolos.tv.ui.common.focusScale
+import com.apostolos.tv.ui.common.tvClickable
 import com.apostolos.tv.ui.common.RecentlyViewedSection
 import com.apostolos.tv.ui.common.SkeletonChannelList
 import com.apostolos.tv.ui.common.SkeletonPosterGrid
@@ -69,10 +71,13 @@ fun SeriesScreen(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val playerState by playerViewModel.uiState.collectAsStateWithLifecycle()
-    categoryVisibility.state.collectAsStateWithLifecycle()
     val recentSeries by viewModel.recentlyViewed.collectAsStateWithLifecycle()
     val selectedSeries = state.selectedSeries
     val errorMessage = state.errorMessage
+
+    LaunchedEffect(Unit) {
+        viewModel.ensureLoaded()
+    }
 
     LaunchedEffect(state.seriesInfo, state.selectedSeries) {
         val series = state.selectedSeries ?: return@LaunchedEffect
@@ -123,6 +128,7 @@ private fun SeriesListContent(
             category.categoryId == ContentRepository.FAVORITES_CATEGORY_ID
     }
     val selectedCategoryId = state.selectedCategoryId?.let(::normalizeCategoryId)
+    val isTv = rememberIsTvFormFactor()
 
     RecentlyViewedSection(
         title = "Συνέχεια",
@@ -176,7 +182,7 @@ private fun SeriesListContent(
         }
         else -> {
             LazyVerticalGrid(
-                columns = GridCells.Fixed(2),
+                columns = if (isTv) GridCells.Adaptive(160.dp) else GridCells.Fixed(2),
                 contentPadding = PaddingValues(CinemaDimens.screenPadding),
                 horizontalArrangement = Arrangement.spacedBy(CinemaDimens.cardSpacing),
                 verticalArrangement = Arrangement.spacedBy(CinemaDimens.cardSpacing),
@@ -321,7 +327,7 @@ private fun EpisodeRow(
                 shape = shape,
             )
             .focusScale()
-            .clickable(onClick = onClick),
+            .tvClickable(onClick = onClick),
         colors = ListItemDefaults.colors(
             containerColor = androidx.compose.ui.graphics.Color.Transparent,
             headlineColor = MaterialTheme.colorScheme.onSurface,

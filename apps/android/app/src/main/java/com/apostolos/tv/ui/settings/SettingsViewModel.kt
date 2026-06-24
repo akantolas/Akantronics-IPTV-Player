@@ -57,7 +57,7 @@ data class PlaylistSettingItem(
 )
 
 data class SettingsUiState(
-    val isLoading: Boolean = true,
+    val isLoading: Boolean = false,
     val isLoggingOut: Boolean = false,
     val isAccountBusy: Boolean = false,
     val isPlaylistsLoading: Boolean = false,
@@ -85,6 +85,7 @@ class SettingsViewModel(
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(SettingsUiState())
     val uiState: StateFlow<SettingsUiState> = _uiState.asStateFlow()
+    private var settingsLoaded = false
 
     init {
         viewModelScope.launch {
@@ -104,29 +105,40 @@ class SettingsViewModel(
         }
         viewModelScope.launch {
             credentialsStore.playlistsState.collect {
-                refreshPlaylists()
-                val creds = credentialsStore.credentialsFlow.value
-                if (creds != null) {
-                    loadCategories(creds)
-                } else {
-                    _uiState.update {
-                        it.copy(
-                            isLoading = false,
-                            liveCategories = emptyList(),
-                            movieCategories = emptyList(),
-                            seriesCategories = emptyList(),
-                        )
-                    }
+                if (settingsLoaded) {
+                    refreshPlaylists()
                 }
             }
         }
         viewModelScope.launch {
             categoryVisibility.state.collect {
+                if (!settingsLoaded) return@collect
                 _uiState.update { state ->
                     state.copy(
                         liveCategories = applyVisibility(state.liveCategories, ContentSection.LIVE),
                         movieCategories = applyVisibility(state.movieCategories, ContentSection.MOVIES),
                         seriesCategories = applyVisibility(state.seriesCategories, ContentSection.SERIES),
+                    )
+                }
+            }
+        }
+    }
+
+    fun ensureLoaded() {
+        if (settingsLoaded) return
+        settingsLoaded = true
+        viewModelScope.launch {
+            refreshPlaylists()
+            val creds = credentialsStore.credentialsFlow.value
+            if (creds != null) {
+                loadCategories(creds)
+            } else {
+                _uiState.update {
+                    it.copy(
+                        isLoading = false,
+                        liveCategories = emptyList(),
+                        movieCategories = emptyList(),
+                        seriesCategories = emptyList(),
                     )
                 }
             }
@@ -215,6 +227,11 @@ class SettingsViewModel(
     fun clearContentCache() {
         contentRepository.clearCache()
         showSnackbar("Η cache περιεχομένου καθαρίστηκε.")
+    }
+
+    fun reloadProgramGuide() {
+        contentRepository.clearEpgCache()
+        showSnackbar("Το πρόγραμμα ανανεώθηκε. Άνοιξε ξανά ένα live κανάλι για ενημέρωση.")
     }
 
     fun logout(onLoggedOut: () -> Unit) {
@@ -328,9 +345,13 @@ class SettingsViewModel(
         val state = credentialsStore.playlistsState.value
         val items = withContext(Dispatchers.IO) {
             state.playlists.map { playlist ->
-                val expDate = runCatching {
-                    api.authenticate(playlist.toCredentials()).expDate
-                }.getOrNull()
+                val expDate = if (playlist.id == state.activePlaylistId) {
+                    runCatching {
+                        api.authenticate(playlist.toCredentials()).expDate
+                    }.getOrNull()
+                } else {
+                    null
+                }
                 PlaylistSettingItem(
                     id = playlist.id,
                     name = playlist.name,

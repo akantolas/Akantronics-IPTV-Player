@@ -30,7 +30,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 data class SeriesUiState(
-    val isLoadingCategories: Boolean = true,
+    val isLoadingCategories: Boolean = false,
     val isLoadingSeries: Boolean = false,
     val isLoadingDetail: Boolean = false,
     val errorMessage: String? = null,
@@ -59,22 +59,34 @@ class SeriesViewModel(
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     private var credentials: XtreamCredentials? = null
+    private var catalogLoaded = false
+    private var lastCredentials: XtreamCredentials? = null
 
     init {
         viewModelScope.launch {
             credentialsStore.credentialsFlow.collect { saved ->
-                if (saved != null) {
+                if (saved != lastCredentials) {
+                    lastCredentials = saved
                     credentials = saved
-                    loadCategories()
+                    catalogLoaded = false
+                    if (saved == null) {
+                        _uiState.value = SeriesUiState()
+                    } else {
+                        _uiState.update {
+                            it.copy(
+                                categories = emptyList(),
+                                seriesList = emptyList(),
+                                selectedCategoryId = null,
+                                errorMessage = null,
+                            )
+                        }
+                    }
                 }
             }
         }
         viewModelScope.launch {
-            categoryVisibility.state.collect { applyCategoryFilter(reloadContent = true) }
-        }
-        viewModelScope.launch {
             categoryVisibility.changes.collect { section ->
-                if (section == ContentSection.SERIES) {
+                if (section == ContentSection.SERIES && catalogLoaded) {
                     applyCategoryFilter(reloadContent = true)
                 }
             }
@@ -84,13 +96,21 @@ class SeriesViewModel(
         }
     }
 
+    fun ensureLoaded() {
+        if (!catalogLoaded && credentials != null) {
+            loadCategories()
+        }
+    }
+
     fun currentCredentials(): XtreamCredentials? = credentials
 
     fun reload() {
+        catalogLoaded = false
         loadCategories()
     }
 
     fun selectCategory(categoryId: String) {
+        ensureLoaded()
         val creds = credentials ?: return
         val normalizedId = normalizeCategoryId(categoryId)
         if (normalizeCategoryId(_uiState.value.selectedCategoryId.orEmpty()) == normalizedId) return
@@ -235,6 +255,7 @@ class SeriesViewModel(
             _uiState.update { it.copy(isLoadingCategories = true, errorMessage = null) }
             try {
                 repository.loadSeriesCategories(creds)
+                catalogLoaded = true
                 _uiState.update { it.copy(isLoadingCategories = false) }
                 applyCategoryFilter(reloadContent = true)
             } catch (error: XtreamApiException) {
